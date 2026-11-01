@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Прототип на приложение</title>
+    <style>
+        /* Основни настройки за страницата */
+        body {
+            margin: 0;
+            padding: 40px;
+            background-color: #e8e8e8;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        /* Контейнер за двата телефона */
+        .phones-container {
+            display: flex;
+            gap: 40px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        /* Стил за всеки екран (телефон) */
+        .phone-screen {
+            width: 320px;
+            height: 680px;
+            background-color: #fff;
+            border-radius: 40px;
+            border: 12px solid #333; /* Рамка на телефона */
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+            position: relative;
+        }
+
+        /* Горен лилав блок */
+        .top-purple {
+            background-color: #4b00e0;
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        /* Обърнат текст */
+        .upside-down {
+            transform: rotate(180deg);
+            color: #000;
+            font-size: 22px;
+            font-weight: 800;
+            text-align: center;
+            line-height: 1.2;
+        }
+
+        /* Долен светъл блок */
+        .bottom-light {
+            background-color: #f4fafc;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding-top: 60px;
+            position: relative;
+            z-index: 1;
+        }
+
+        /* Текст в долната част */
+        .bottom-text {
+            color: #000;
+            font-size: 22px;
+            font-weight: 800;
+            text-align: center;
+            line-height: 1.3;
+            z-index: 2;
+        }
+
+        /* Червен блок (само за екран 2) */
+        .middle-red {
+            background-color: #ff3333;
+            padding: 25px 20px;
+            color: #000;
+            font-size: 20px;
+            font-weight: 800;
+            text-align: center;
+            line-height: 1.3;
+        }
+
+        /* CSS за облачето */
+        .cloud {
+            width: 120px;
+            height: 40px;
+            background: #ffffff;
+            border-radius: 50px;
+            position: relative;
+            margin-bottom: 50px;
+        }
+        .cloud::before, .cloud::after {
+            content: '';
+            position: absolute;
+            background: #ffffff;
+            border-radius: 50%;
+        }
+        .cloud::before {
+            width: 60px;
+            height: 60px;
+            top: -30px;
+            left: 15px;
+        }
+        .cloud::after {
+            width: 80px;
+            height: 80px;
+            top: -40px;
+            right: 15px;
+        }
+
+        /* CSS за хълмчето */
+        .hill {
+            position: absolute;
+            bottom: 0;
+            left: -10%;
+            width: 120%;
+            height: 180px;
+            background-color: #e6e9d1;
+            border-radius: 50% 50% 0 0;
+            z-index: 1;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="phones-container">
+        
+        <!-- ЕКРАН 1 (Снимка 1) -->
+        <div class="phone-screen">
+            <div class="top-purple">
+                <div class="upside-down">
+                    chuvaschiq chovek<br>pishe tekst<br>kojto se izobrazqva dolu
+                </div>
+            </div>
+            <div class="bottom-light">
+                <div class="cloud"></div>
+                <div class="bottom-text">
+                    animiranoto<br>choveche
+                </div>
+                <div class="hill"></div>
+            </div>
+        </div>
+
+        <!-- ЕКРАН 2 (Снимка 2) -->
+        <div class="phone-screen">
+            <div class="top-purple" style="flex: 0.8;">
+                <div class="upside-down">
+                    chuvaschiq da <br>prochete tekst<br>kojto e preveden ot zhestove
+                </div>
+            </div>
+            <div class="middle-red">
+                teksta kojto e ot<br>zhestovete i mozhe<br>da se redaktira
+            </div>
+            <div class="bottom-light" style="flex: 1.2;">
+                <div class="cloud"></div>
+                <div class="bottom-text">
+                    kamerata koqto<br>gleda choveka s<br>zhest
+                </div>
+                <div class="hill"></div>
+            </div>
+        </div>
+
+    </div>
+
+</body>
+</html>
