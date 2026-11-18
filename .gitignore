@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Runtime database
+dataset/*.sqlite3
+dataset/*.db
+
+# Uploaded recordings and generated data
+dataset/raw/*
+!dataset/raw/.gitkeep
+dataset/processed/*
+!dataset/processed/.gitkeep
+dataset/models/*
+!dataset/models/.gitkeep
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
