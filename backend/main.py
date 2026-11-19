@@ -1,358 +1,367 @@
+"""
+FastAPI backend for the Translate App — HTTP layer only.
 
-"""Main FastAPI application for the Translate App backend."""
+Responsibilities:
+- accept video uploads (upload reading delegated to ``backend/recorder.py``),
+- persist metadata (delegated to ``backend/dataset_manager.py``),
+- map ``DatasetError`` subclasses to HTTP status codes,
+- never expose internal file paths or raw database error text.
 
+Milestone 1 — no sign recognition, no landmark extraction.
+"""
 from __future__ import annotations
 
-import logging
-import os
-import re
+import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
 from pathlib import Path
-from uuid import uuid4
+from typing import Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.requests import Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse
+from pydantic import BaseModel
 
-from backend.dataset_manager import (
-    RAW_DIR,
-    ConflictError,
-    DatabaseError,
-    DatasetError,
-    NotFoundError,
-    ValidationError,
-    delete_recording,
-    initialize_database,
-    list_recordings,
-    save_recording_metadata,
-)
-from backend.recorder import save_video_upload
-
-
-logger = logging.getLogger(__name__)
-
-PARTICIPANT_ID_PATTERN = re.compile(
-    r"^[A-Za-z0-9_-]{3,40}$"
-)
-
-RECORDING_FILENAME_PATTERN = re.compile(
-    r"^[a-f0-9]{32}\.(?:webm|mp4|mov)$"
-)
+# Package-relative imports when launched as `uvicorn backend.main:app`
+# from the project root; flat imports when launched from `backend/`.
+try:
+    from . import dataset_manager
+    from .dataset_manager import (
+        ConflictError,
+        DatabaseError,
+        DatasetError,
+        NotFoundError,
+        PROJECT_ROOT,
+        RAW_DIR,
+        ValidationError,
+    )
+    from .recorder import (
+        UploadTooLargeError,
+        infer_content_type,
+        read_upload,
+    )
+except ImportError:  # pragma: no cover
+    import dataset_manager  # type: ignore
+    from dataset_manager import (  # type: ignore
+        ConflictError,
+        DatabaseError,
+        DatasetError,
+        NotFoundError,
+        PROJECT_ROOT,
+        RAW_DIR,
+        ValidationError,
+    )
+    from recorder import (  # type: ignore
+        UploadTooLargeError,
+        infer_content_type,
+        read_upload,
+    )
 
 
 # ---------------------------------------------------------------------------
-# Application lifecycle
+# Constants
 # ---------------------------------------------------------------------------
+# API-level label cap. The database accepts up to 128; the HTTP API is
+# stricter on purpose so we never hit the DB limit from the browser.
+MAX_LABEL_LENGTH = 80
 
+# Extension -> MIME, used to set FileResponse media_type and to recover
+# the content type when browsers send application/octet-stream.
+EXT_TO_MIME = {
+    ".webm": "video/webm",
+    ".mp4": "video/mp4",
+    ".mov": "video/quicktime",
+    ".mkv": "video/x-matroska",
+}
+MIME_TO_EXT = {mime: ext for ext, mime in EXT_TO_MIME.items()}
+
+# Fields that stay internal — never returned by any endpoint.
+_INTERNAL_FIELDS = {"file_path", "filename"}
+
+
+# ---------------------------------------------------------------------------
+# Lifespan + app
+# ---------------------------------------------------------------------------
 @asynccontextmanager
-async def lifespan(_: FastAPI):
-    """Initialize the database when the application starts."""
-    initialize_database()
+async def lifespan(app: FastAPI):
+    """Ensure database schema and raw storage directory exist at startup."""
+    dataset_manager.init_db()
+    RAW_DIR.mkdir(parents=True, exist_ok=True)
     yield
 
 
 app = FastAPI(
     title="Translate App API",
-    description=(
-        "Backend API for consent-based video dataset collection."
-    ),
-    version="0.2.0",
+    version="0.1.0",
+    description="Foundation backend for Bulgarian Sign Language translate app.",
     lifespan=lifespan,
 )
 
-
-# ---------------------------------------------------------------------------
-# CORS configuration
-# ---------------------------------------------------------------------------
-
-allowed_origins = [
-    origin.strip()
-    for origin in os.getenv(
-        "CORS_ORIGINS",
-        (
-            "http://localhost:5500,"
-            "http://127.0.0.1:5500,"
-            "http://localhost:8000,"
-            "http://127.0.0.1:8000"
-        ),
-    ).split(",")
-    if origin.strip()
-]
-
+# Local development only. Tighten allow_origins before any deployment.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
-    allow_credentials=False,
-    allow_methods=["GET", "POST", "DELETE"],
-    allow_headers=["Content-Type"],
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
 # ---------------------------------------------------------------------------
-# Error handling
+# Helpers
 # ---------------------------------------------------------------------------
+def _to_http_error(exc: DatasetError) -> HTTPException:
+    """Map a ``DatasetError`` to an ``HTTPException``.
 
-@app.exception_handler(ValidationError)
-async def handle_validation_error(
-    _: Request,
-    exc: ValidationError,
-) -> JSONResponse:
-    return JSONResponse(
-        status_code=422,
-        content={"detail": str(exc)},
-    )
-
-
-@app.exception_handler(NotFoundError)
-async def handle_not_found_error(
-    _: Request,
-    exc: NotFoundError,
-) -> JSONResponse:
-    return JSONResponse(
-        status_code=404,
-        content={"detail": str(exc)},
-    )
+    - ValidationError -> 422
+    - NotFoundError   -> 404
+    - ConflictError   -> 409
+    - DatabaseError   -> 500 with a generic message (no internals leaked)
+    - anything else   -> 500 with a generic message
+    """
+    if isinstance(exc, ValidationError):
+        return HTTPException(status_code=422, detail=str(exc))
+    if isinstance(exc, NotFoundError):
+        return HTTPException(status_code=404, detail=str(exc))
+    if isinstance(exc, ConflictError):
+        return HTTPException(status_code=409, detail=str(exc))
+    if isinstance(exc, DatabaseError):
+        return HTTPException(status_code=500, detail="Internal database error.")
+    return HTTPException(status_code=500, detail="Internal server error.")
 
 
-@app.exception_handler(ConflictError)
-async def handle_conflict_error(
-    _: Request,
-    exc: ConflictError,
-) -> JSONResponse:
-    return JSONResponse(
-        status_code=409,
-        content={"detail": str(exc)},
-    )
+def _sanitize(record: dict) -> dict:
+    """Strip internal fields from a record before returning it as JSON."""
+    return {k: v for k, v in record.items() if k not in _INTERNAL_FIELDS}
 
 
-@app.exception_handler(DatabaseError)
-async def handle_database_error(
-    _: Request,
-    exc: DatabaseError,
-) -> JSONResponse:
-    logger.error("Database operation failed: %s", exc)
-
-    return JSONResponse(
-        status_code=500,
-        content={
-            "detail": "A database operation failed."
-        },
-    )
+def _safe_extension(
+    original_filename: Optional[str], content_type: Optional[str]
+) -> str:
+    """Return a safe file extension for the stored video file."""
+    if original_filename:
+        candidate = Path(original_filename).suffix.lower()
+        if candidate in EXT_TO_MIME:
+            return candidate
+    if content_type in MIME_TO_EXT:
+        return MIME_TO_EXT[content_type]
+    return ".webm"  # safe default for MediaRecorder output
 
 
-@app.exception_handler(DatasetError)
-async def handle_dataset_error(
-    _: Request,
-    exc: DatasetError,
-) -> JSONResponse:
-    logger.error("Dataset operation failed: %s", exc)
-
-    return JSONResponse(
-        status_code=500,
-        content={
-            "detail": "A dataset operation failed."
-        },
-    )
-
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-def _public_recording(recording: dict) -> dict:
-    """Return only metadata intended for API consumers."""
-
-    allowed_fields = {
-        "id",
-        "participant_id",
-        "label",
-        "consent_given",
-        "created_at",
-        "content_type",
-        "file_size",
-    }
-
-    return {
-        key: value
-        for key, value in recording.items()
-        if key in allowed_fields
-    }
-
-
-def _cleanup_uploaded_file(stored_filename: str) -> None:
-    """Remove an uploaded file after metadata persistence fails."""
-
-    if not RECORDING_FILENAME_PATTERN.fullmatch(stored_filename):
-        logger.error(
-            "Refusing to clean up an unexpected filename."
+def _validate_label_length(label: Optional[str]) -> Optional[str]:
+    """Trim ``label`` and enforce the API-level 80-character cap."""
+    if label is None:
+        return None
+    if not isinstance(label, str):
+        raise HTTPException(status_code=422, detail="label must be a string.")
+    trimmed = label.strip()
+    if not trimmed:
+        return None
+    if len(trimmed) > MAX_LABEL_LENGTH:
+        raise HTTPException(
+            status_code=422,
+            detail=f"label must be at most {MAX_LABEL_LENGTH} characters.",
         )
-        return
+    return trimmed
 
+
+def _resolve_video_path(record: dict) -> Path:
+    """Return the absolute path to a record's video, guaranteed inside RAW_DIR.
+
+    Defence in depth against a tampered ``file_path`` value in the database.
+    """
+    relative = record.get("file_path")
+    if not relative:
+        raise HTTPException(
+            status_code=500, detail="Recording has no associated file."
+        )
+
+    abs_path = (PROJECT_ROOT / relative).resolve()
     try:
-        (RAW_DIR / stored_filename).unlink(missing_ok=True)
-
-    except OSError:
-        logger.exception(
-            "Could not remove an uncommitted uploaded video."
+        abs_path.relative_to(RAW_DIR.resolve())
+    except ValueError:
+        raise HTTPException(
+            status_code=500, detail="Invalid file path in record."
         )
 
-
-def _normalize_original_filename(filename: str | None) -> str:
-    """Remove path components from a client-provided filename."""
-
-    if not filename:
-        return "recording"
-
-    normalized = filename.replace("\\", "/").split("/")[-1]
-    normalized = normalized.replace("\x00", "").strip()
-
-    return normalized[:255] or "recording"
+    if not abs_path.exists():
+        raise HTTPException(status_code=404, detail="Video file is missing.")
+    return abs_path
 
 
 # ---------------------------------------------------------------------------
-# Health check
+# Request models
 # ---------------------------------------------------------------------------
+class LabelUpdate(BaseModel):
+    """Body for PATCH /api/recordings/{id}."""
+    label: Optional[str] = None
 
+
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
 @app.get("/health")
-async def health_check() -> dict[str, str]:
-    return {
-        "status": "ok",
-        "service": "translate-app-api",
-    }
+def health() -> dict:
+    return {"status": "ok", "service": "translate-app-backend"}
 
-
-# ---------------------------------------------------------------------------
-# Upload recording
-# ---------------------------------------------------------------------------
-
-@app.post("/api/recordings", status_code=201)
-async def upload_recording(
-    file: UploadFile = File(...),
-    participant_id: str = Form(...),
-    consent_given: bool = Form(...),
-    label: str | None = Form(default=None),
-) -> dict:
-
-    # Validate participant identifier before accepting the video.
-    participant_id = participant_id.strip()
-
-    if not PARTICIPANT_ID_PATTERN.fullmatch(participant_id):
-        raise HTTPException(
-            status_code=422,
-            detail=(
-                "participant_id must contain 3-40 characters: "
-                "letters, numbers, underscores or hyphens."
-            ),
-        )
-
-    # Consent is mandatory.
-    if not consent_given:
-        raise HTTPException(
-            status_code=403,
-            detail="Recording cannot be stored without consent.",
-        )
-
-    # Normalize optional label.
-    cleaned_label = label.strip() if label else None
-    cleaned_label = cleaned_label or None
-
-    if cleaned_label and len(cleaned_label) > 80:
-        raise HTTPException(
-            status_code=422,
-            detail="label must be 80 characters or fewer.",
-        )
-
-    # Store the uploaded video.
-    try:
-        (
-            stored_filename,
-            file_size,
-            content_type,
-        ) = await save_video_upload(file)
-
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400,
-            detail=str(exc),
-        ) from exc
-
-    # Build metadata for the database.
-    recording = {
-        "id": uuid4().hex,
-        "participant_id": participant_id,
-        "label": cleaned_label,
-        "consent_given": True,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "original_filename": _normalize_original_filename(
-            file.filename
-        ),
-        "stored_filename": stored_filename,
-        "content_type": content_type,
-        "file_size": file_size,
-    }
-
-    # Save metadata only after the video has been stored successfully.
-    try:
-        save_recording_metadata(recording)
-
-    except DatasetError:
-        _cleanup_uploaded_file(stored_filename)
-        raise
-
-    except Exception as exc:
-        _cleanup_uploaded_file(stored_filename)
-
-        logger.exception(
-            "Unexpected error while saving recording metadata."
-        )
-
-        raise HTTPException(
-            status_code=500,
-            detail="Could not save recording metadata.",
-        ) from exc
-
-    return {
-        "message": "Recording saved successfully.",
-        "recording": _public_recording(recording),
-    }
-
-
-# ---------------------------------------------------------------------------
-# List recordings
-# ---------------------------------------------------------------------------
 
 @app.get("/api/recordings")
-async def get_recordings() -> dict:
+def list_recordings() -> dict:
+    try:
+        items = dataset_manager.get_all_recordings()
+    except DatasetError as exc:
+        raise _to_http_error(exc)
 
-    recordings = list_recordings()
-
-    return {
-        "recordings": [
-            _public_recording(recording)
-            for recording in recordings
-        ]
-    }
+    sanitized = [_sanitize(r) for r in items]
+    return {"items": sanitized, "count": len(sanitized)}
 
 
-# ---------------------------------------------------------------------------
-# Delete recording
-# ---------------------------------------------------------------------------
+@app.get("/api/recordings/{recording_id}")
+def get_recording(recording_id: str) -> dict:
+    try:
+        record = dataset_manager.get_recording_by_id(recording_id)
+    except DatasetError as exc:
+        raise _to_http_error(exc)
+    return _sanitize(record)
+
+
+@app.get("/api/recordings/{recording_id}/file")
+def get_recording_file(recording_id: str):
+    try:
+        record = dataset_manager.get_recording_by_id(recording_id)
+    except DatasetError as exc:
+        raise _to_http_error(exc)
+
+    path = _resolve_video_path(record)
+    media_type = EXT_TO_MIME.get(path.suffix.lower(), "application/octet-stream")
+    return FileResponse(path, media_type=media_type)
+
+
+@app.post("/api/recordings", status_code=201)
+async def create_recording(
+    file: UploadFile = File(...),
+    participant_id: str = Form(...),
+    consent: bool = Form(...),
+    label: Optional[str] = Form(None),
+) -> dict:
+    # ``file.close()`` must run on every exit path — success, validation
+    # error, HTTPException, or unexpected crash. The outer try/finally
+    # guarantees that. Close failures are swallowed so they never mask the
+    # real error the client should see; the temp file will be cleaned up
+    # by garbage collection regardless.
+    try:
+        # --- 1) Cheap validation BEFORE touching disk -------------------
+        if not consent:
+            raise HTTPException(
+                status_code=422,
+                detail="Consent is required to store a recording.",
+            )
+
+        validated_label = _validate_label_length(label)
+
+        # Reuse dataset_manager's participant_id validator so the regex
+        # lives in exactly one place.
+        try:
+            pid = dataset_manager._validate_participant_id(participant_id)
+        except ValidationError as exc:
+            raise _to_http_error(exc)
+
+        # --- 2) Read the upload (chunked, size-capped) ------------------
+        try:
+            payload = read_upload(file.file)
+        except UploadTooLargeError as exc:
+            raise HTTPException(status_code=413, detail=str(exc))
+        except Exception:
+            raise HTTPException(
+                status_code=500, detail="Failed to read uploaded file."
+            )
+
+        if not payload:
+            raise HTTPException(
+                status_code=422, detail="Uploaded file is empty."
+            )
+
+        content_type = infer_content_type(file.filename, file.content_type)
+        # Browsers sometimes send application/octet-stream for MediaRecorder
+        # blobs. Fall back to extension-based inference in that case.
+        if not content_type or content_type == "application/octet-stream":
+            if file.filename:
+                content_type = EXT_TO_MIME.get(
+                    Path(file.filename).suffix.lower()
+                )
+        if not content_type or not content_type.startswith("video/"):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Unsupported content type '{content_type}'. "
+                    "Only video/* accepted."
+                ),
+            )
+
+        # --- 3) Persist the video file ---------------------------------
+        # Fresh UUID filename; the client-supplied name never touches disk.
+        rid = uuid.uuid4().hex
+        extension = _safe_extension(file.filename, content_type)
+        filename = f"{rid}{extension}"
+        abs_video_path = RAW_DIR / filename
+        relative_path = f"dataset/raw/{filename}"
+
+        RAW_DIR.mkdir(parents=True, exist_ok=True)
+        try:
+            abs_video_path.write_bytes(payload)
+        except OSError:
+            raise HTTPException(
+                status_code=500, detail="Cannot write video file."
+            )
+
+        # --- 4) Persist metadata; roll back the file on any failure ----
+        try:
+            record = dataset_manager.add_recording(
+                recording_id=rid,
+                participant_id=pid,
+                consent_given=True,
+                filename=filename,
+                file_path=relative_path,
+                label=validated_label,
+            )
+        except DatasetError as exc:
+            try:
+                abs_video_path.unlink()
+            except OSError:
+                pass
+            raise _to_http_error(exc)
+        except Exception:
+            try:
+                abs_video_path.unlink()
+            except OSError:
+                pass
+            raise HTTPException(
+                status_code=500, detail="Internal server error."
+            )
+
+        return _sanitize(record)
+    finally:
+        # Guaranteed on every exit. Swallow close errors so we don't
+        # mask the original exception (or a successful 201 response).
+        try:
+            await file.close()
+        except Exception:
+            pass
+
+
+@app.patch("/api/recordings/{recording_id}")
+def update_recording_label(recording_id: str, body: LabelUpdate) -> dict:
+    validated_label = _validate_label_length(body.label)
+    try:
+        record = dataset_manager.update_label(recording_id, validated_label)
+    except DatasetError as exc:
+        raise _to_http_error(exc)
+    return _sanitize(record)
+
 
 @app.delete("/api/recordings/{recording_id}")
-async def remove_recording(
-    recording_id: str,
-) -> dict[str, str]:
-
-    deleted = delete_recording(recording_id)
-
-    if not deleted:
-        raise HTTPException(
-            status_code=404,
-            detail="Recording not found.",
-        )
-
-    return {
-        "message": "Recording deleted successfully."
-    }
+def delete_recording(recording_id: str) -> dict:
+    """Delete the metadata row. The original video file is NOT deleted."""
+    try:
+        dataset_manager.delete_recording_by_id(recording_id)
+    except DatasetError as exc:
+        raise _to_http_error(exc)
+    return {"deleted": recording_id}
