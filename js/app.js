@@ -1,7 +1,7 @@
 /* ==================================================================
    Translate App — app.js
    Milestone: index.html popups (Идеи / Грешки / Речник)
-   Vanilla JS, no dependencies.
+   Vanilla JS, no dependencies, no network calls, no storage.
    ================================================================== */
 
 (function () {
