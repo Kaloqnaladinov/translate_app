@@ -559,3 +559,144 @@ textarea:focus-visible {
         min-height: 680px;
     }
 }
+
+/* =========================================
+   CAMERA PAGE — CLEAN LAYOUT
+   ========================================= */
+
+.camera-stage {
+    flex: 1;
+    padding: 25px 18px 22px;
+    background: #cbd2d9;
+
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 18px;
+}
+
+.camera-stage .text-bold {
+    margin-bottom: 2px;
+}
+
+/* Camera preview */
+
+.camera-preview {
+    width: 100%;
+    height: 240px;
+    min-height: 240px;
+
+    position: relative;
+    overflow: hidden;
+
+    border: none;
+    border-radius: 14px;
+    background: #202020;
+
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.camera-preview video {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+
+    position: absolute;
+    inset: 0;
+
+    object-fit: cover;
+    transform: scaleX(-1);
+}
+
+#cameraPlaceholder {
+    max-width: 80%;
+    margin: 0;
+
+    position: relative;
+    z-index: 1;
+
+    color: #e5e5e5;
+    font-size: 14px;
+    text-align: center;
+}
+
+/* Camera and recording controls */
+
+.camera-controls,
+.recording-controls {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.camera-controls button,
+.recording-controls button {
+    min-height: 46px;
+    padding: 10px;
+
+    border: none;
+    border-radius: 9px;
+
+    background: #111;
+    color: #fff;
+
+    font-size: 12px;
+    font-weight: 700;
+
+    transition: background-color 0.2s ease;
+}
+
+.recording-controls button {
+    background: #31516c;
+}
+
+.camera-controls button:hover:not(:disabled) {
+    background: #333;
+}
+
+.recording-controls button:hover:not(:disabled) {
+    background: #426987;
+}
+
+.camera-controls button:disabled,
+.recording-controls button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+/* Recording status */
+
+#recordingStatus {
+    width: 100%;
+    margin: 0;
+    padding: 11px 12px;
+
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.55);
+
+    color: #333;
+    font-size: 13px;
+    line-height: 1.4;
+    text-align: center;
+}
+
+/* Mobile layout */
+
+@media (max-width: 480px) {
+    .camera-stage {
+        padding: 24px 18px;
+        gap: 18px;
+    }
+
+    .camera-preview {
+        height: 260px;
+        min-height: 260px;
+    }
+
+    .camera-controls button,
+    .recording-controls button {
+        font-size: 11px;
+    }
+}
