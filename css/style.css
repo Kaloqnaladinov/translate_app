@@ -142,56 +142,128 @@ body {
     margin-top: 20px;
 }
 
-/* --- СТИЛОВЕ ЗА ЕКРАН 2 (Преводач) --- */
-.top-white-text {
-    background-color: #fff;
-    flex: 4;
+/* --- СТИЛОВЕ ЗА ЕКРАН 2 (Текст / Преводач) --- */
+.screen-2 {
+    background: #fff;
+}
+
+.text-editor {
+    padding: 22px 20px 18px;
     display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 20px;
-    text-align: center;
-    font-size: 20px;
-    font-weight: 900;
+    flex-direction: column;
+    gap: 12px;
+    background: #fff;
+}
+
+.text-editor > label {
+    font-size: 17px;
+    font-weight: 800;
+}
+
+.text-editor textarea {
+    width: 100%;
+    min-height: 115px;
+    padding: 13px;
+    border: 1px solid #c4c4c4;
+    border-radius: 13px;
+    background: #fafafa;
     color: #111;
-    line-height: 1.3;
+    font-size: 15px;
+    line-height: 1.5;
+    resize: vertical;
+    box-sizing: border-box;
 }
 
-/* Плаващо меню */
-.floating-nav {
-    position: absolute;
-    top: 40%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: 85%;
-    background-color: #fff;
-    border-radius: 30px;
-    padding: 10px 20px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    box-shadow: 0 4px 10px rgba(0,0,0,0.1);
-    z-index: 10;
+.text-editor textarea:focus {
+    outline: 2px solid #31516c;
+    outline-offset: 1px;
 }
 
-.floating-nav .menu-text {
+.text-controls {
     display: flex;
-    align-items: center;
-    gap: 10px;
-    font-size: 14px;
-    color: #333;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.text-controls button {
+    flex: 1 1 30%;
+    min-height: 42px;
+    padding: 9px 7px;
+    border: 0;
+    border-radius: 10px;
+    background: #c6d2dc;
+    color: #111;
+    font-size: 12px;
+    font-weight: 700;
     cursor: pointer;
 }
 
-.floating-nav i.fa-recycle {
-    font-size: 22px;
-    color: #000;
+#textStatus, 
+#avatarStatus {
+    margin: 0;
+    color: #333;
+    font-size: 13px;
+    line-height: 1.5;
 }
 
-/* Намаляваме човечето във втория екран */
-.screen-2 .head { width: 60px; height: 60px; }
-.screen-2 .body { width: 100px; height: 150px; }
-.screen-2 .person-container { margin-top: 40px; }
+/* Плаващо меню (Върнато в нормалния поток, за да не застъпва текста) */
+.floating-nav {
+    position: relative;
+    z-index: 2;
+    width: calc(100% - 40px);
+    min-height: 54px;
+    margin: 0 auto -27px;
+    padding: 8px 18px;
+    background: #fff;
+    border-radius: 30px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+    box-sizing: border-box;
+}
+
+.floating-nav button {
+    border: 0;
+    padding: 4px;
+    background: transparent;
+    color: inherit;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+/* Секция за аватар */
+.avatar-stage {
+    flex: 1;
+    min-height: 300px;
+    padding: 35px 20px 25px;
+    background: #d0d6dc;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.avatar-container {
+    width: 100%;
+    min-height: 230px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 14px;
+    text-align: center;
+}
+
+.avatar-container .person-container {
+    margin: 0;
+}
+
+.avatar-container #avatarStatus {
+    max-width: 260px;
+    text-align: center;
+}
 
 /* --- СТИЛОВЕ ЗА ЕКРАН 3 (Меню) --- */
 .menu-screen {
@@ -247,13 +319,16 @@ body {
     line-height: 1.2;
     cursor: pointer;
 }
+
+/* --- БУТОНИ ЗА КАМЕРАТА (Поправени) --- */
 .action-buttons {
     position: absolute;
-    top: 75px;
+    top: 75px; /* Преместено надолу, под черния хедър */
     right: 15px;
     display: flex;
     flex-direction: column;
     gap: 10px;
+    z-index: 10;
 }
 
 .control-btn {
@@ -265,7 +340,7 @@ body {
     display: flex;
     justify-content: center;
     align-items: center;
-    /* Правим формата на осмоъгълник, подобно на снимката */
+    /* Форма на осмоъгълник */
     clip-path: polygon(30% 0%, 70% 0%, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0% 70%, 0% 30%);
 }
 
@@ -283,4 +358,3 @@ body {
     height: 18px;
     background-color: white;
 }
-
