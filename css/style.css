@@ -247,3 +247,40 @@ body {
     line-height: 1.2;
     cursor: pointer;
 }
+.action-buttons {
+    position: absolute;
+    top: 20px;
+    right: 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.control-btn {
+    width: 55px;
+    height: 55px;
+    background-color: #0f0f0f;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    /* Правим формата на осмоъгълник, подобно на снимката */
+    clip-path: polygon(30% 0%, 70% 0%, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0% 70%, 0% 30%);
+}
+
+.play-triangle {
+    width: 0;
+    height: 0;
+    border-top: 12px solid transparent;
+    border-bottom: 12px solid transparent;
+    border-left: 18px solid white;
+    margin-left: 5px; /* Леко отместване за центриране */
+}
+
+.stop-square {
+    width: 18px;
+    height: 18px;
+    background-color: white;
+}
+
