@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Translate App — Dataset</title>
+
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+    <main class="phone-screen dataset-screen">
+
+        <header class="header-black">
+            <button
+                type="button"
+                onclick="window.location.href='index.html'"
+                aria-label="Главно меню">
+                <img src="assets/images/whitebar.png" alt="">
+            </button>
+
+            <h1>Записи</h1>
+
+            <button
+                type="button"
+                onclick="window.location.href='kamera.html'"
+                aria-label="Нов запис">
+                <span aria-hidden="true">＋</span>
+            </button>
+        </header>
+
+        <section class="dataset-content">
+
+            <h2>Управление на dataset</h2>
+
+            <p>
+                Тук ще се показват записаните видеа и информацията
+                за съответните жестове.
+            </p>
+
+            <p
+                id="datasetStatus"
+                role="status"
+                aria-live="polite">
+                Записите все още не са заредени.
+            </p>
+
+            <div
+                id="recordingsList"
+                class="recordings-list"
+                aria-live="polite">
+
+                <!-- Записите ще бъдат добавяни чрез JavaScript. -->
+
+            </div>
+
+        </section>
+
+        <footer class="footer-black">
+            Translate App — Dataset Manager
+        </footer>
+
+    </main>
+</body>
+</html>

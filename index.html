@@ -3,125 +3,183 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Прототип на приложение - Версия 2</title>
-    <!-- Добавяме библиотека за икони -->
+
+    <title>Translate App</title>
+
     <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="css/animation.css">
     <link rel="stylesheet" href="css/popups.css">
+
+    <script src="js/app.js" defer></script>
 </head>
+
 <body>
-    <!-- ЕКРАН 3: Главно меню -->
-    <div class="phone-screen">
-        <div class="menu-screen">
+    <main class="phone-screen">
+        <section class="menu-screen" aria-label="Главно меню">
+
             <div class="main-buttons">
-                <button class="btn-large" onclick="document.location='kamera.html'">
-                    Превод <i class="fas fa-camera"></i>
+                <button
+                    class="btn-large"
+                    type="button"
+                    onclick="window.location.href='kamera.html'">
+                    <span>Превод</span>
+                    <span aria-hidden="true">📷</span>
                 </button>
-                <button class="btn-large" type="button" data-modal="modal-dictionary">
-                    Речник <i class="fas fa-book-open"></i>
+
+                <button
+                    class="btn-large"
+                    type="button"
+                    data-modal="modal-dictionary">
+                    <span>Речник</span>
+                    <span aria-hidden="true">📖</span>
                 </button>
             </div>
 
             <div class="bottom-buttons">
-                <button class="btn-small" type="button" data-modal="modal-ideas">
+                <button
+                    class="btn-small"
+                    type="button"
+                    data-modal="modal-ideas">
                     идеи за<br>надграждане
                 </button>
-                <button class="btn-small" type="button" data-modal="modal-bugs">
+
+                <button
+                    class="btn-small"
+                    type="button"
+                    data-modal="modal-bugs">
                     докладвай за<br>грешки
                 </button>
             </div>
-        </div>
-    </div>
 
-    <!-- ================= MODAL: Идеи за надграждане ================= -->
-    <div class="modal-overlay"
-         id="modal-ideas"
-         role="dialog"
-         aria-modal="true"
-         aria-labelledby="modal-ideas-title"
-         aria-hidden="true">
+        </section>
+    </main>
+
+    <!-- Popup: Идеи за надграждане -->
+    <div
+        class="modal-overlay"
+        id="modal-ideas"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="modal-ideas-title"
+        aria-hidden="true">
+
         <div class="modal-content">
-            <button type="button"
-                    class="modal-close"
-                    data-close-modal
-                    aria-label="Затвори">×</button>
-            <h2 id="modal-ideas-title" class="modal-title">Идеи за надграждане</h2>
+            <button
+                type="button"
+                class="modal-close"
+                data-close-modal
+                aria-label="Затвори">×</button>
+
+            <h2 id="modal-ideas-title" class="modal-title">
+                Идеи за надграждане
+            </h2>
+
             <form class="modal-form" data-popup-form novalidate>
                 <label class="modal-field">
                     <span>Имейл</span>
-                    <input type="email"
-                           name="email"
-                           required
-                           autocomplete="email"
-                           placeholder="example@mail.com">
+                    <input
+                        type="email"
+                        name="email"
+                        required
+                        autocomplete="email"
+                        placeholder="example@mail.com">
                 </label>
+
                 <label class="modal-field">
                     <span>Описание на идеята</span>
-                    <textarea name="description"
-                              rows="4"
-                              required
-                              placeholder="Опишете вашата идея..."></textarea>
+                    <textarea
+                        name="description"
+                        rows="4"
+                        required
+                        placeholder="Опишете вашата идея..."></textarea>
                 </label>
+
                 <p class="modal-error" data-error role="alert" hidden></p>
-                <button type="submit" class="modal-submit">Изпрати</button>
+
+                <button type="submit" class="modal-submit">
+                    Изпрати
+                </button>
+
                 <p class="modal-message" data-message role="status" hidden></p>
             </form>
         </div>
     </div>
 
-    <!-- ================= MODAL: Докладвай за грешки ================= -->
-    <div class="modal-overlay"
-         id="modal-bugs"
-         role="dialog"
-         aria-modal="true"
-         aria-labelledby="modal-bugs-title"
-         aria-hidden="true">
+    <!-- Popup: Докладване на грешки -->
+    <div
+        class="modal-overlay"
+        id="modal-bugs"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="modal-bugs-title"
+        aria-hidden="true">
+
         <div class="modal-content">
-            <button type="button"
-                    class="modal-close"
-                    data-close-modal
-                    aria-label="Затвори">×</button>
-            <h2 id="modal-bugs-title" class="modal-title">Докладвай за грешки</h2>
+            <button
+                type="button"
+                class="modal-close"
+                data-close-modal
+                aria-label="Затвори">×</button>
+
+            <h2 id="modal-bugs-title" class="modal-title">
+                Докладвай за грешки
+            </h2>
+
             <form class="modal-form" data-popup-form novalidate>
                 <label class="modal-field">
                     <span>Имейл</span>
-                    <input type="email"
-                           name="email"
-                           required
-                           autocomplete="email"
-                           placeholder="example@mail.com">
+                    <input
+                        type="email"
+                        name="email"
+                        required
+                        autocomplete="email"
+                        placeholder="example@mail.com">
                 </label>
+
                 <label class="modal-field">
                     <span>Описание на проблема</span>
-                    <textarea name="description"
-                              rows="4"
-                              required
-                              placeholder="Опишете проблема..."></textarea>
+                    <textarea
+                        name="description"
+                        rows="4"
+                        required
+                        placeholder="Опишете проблема..."></textarea>
                 </label>
+
                 <p class="modal-error" data-error role="alert" hidden></p>
-                <button type="submit" class="modal-submit">Изпрати</button>
+
+                <button type="submit" class="modal-submit">
+                    Изпрати
+                </button>
+
                 <p class="modal-message" data-message role="status" hidden></p>
             </form>
         </div>
     </div>
 
-    <!-- ================= MODAL: Речник ================= -->
-    <div class="modal-overlay"
-         id="modal-dictionary"
-         role="dialog"
-         aria-modal="true"
-         aria-labelledby="modal-dictionary-title"
-         aria-hidden="true">
+    <!-- Popup: Речник -->
+    <div
+        class="modal-overlay"
+        id="modal-dictionary"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="modal-dictionary-title"
+        aria-hidden="true">
+
         <div class="modal-content">
-            <button type="button"
-                    class="modal-close"
-                    data-close-modal
-                    aria-label="Затвори">×</button>
-            <h2 id="modal-dictionary-title" class="modal-title">Речник</h2>
-            <p class="modal-body">В разработка.</p>
+            <button
+                type="button"
+                class="modal-close"
+                data-close-modal
+                aria-label="Затвори">×</button>
+
+            <h2 id="modal-dictionary-title" class="modal-title">
+                Речник
+            </h2>
+
+            <p class="modal-body">
+                Речникът е в разработка.
+            </p>
         </div>
     </div>
-
-    <script src="js/app.js" defer></script>
 </body>
 </html>

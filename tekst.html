@@ -3,35 +3,95 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Прототип на приложение - Версия 2</title>
-    <!-- Добавяме библиотека за икони -->
+
+    <title>Translate App — Текст</title>
+
     <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="css/animation.css">
-    </head>
-    <body>
-         <!-- ЕКРАН 2: Редакция на текст -->
-        <div class="phone-screen screen-2">
-            <div class="top-white-text">
-                teksta kojto sche<br>izleze sled prevoda<br>ot kamera. mozhe<br>da se redaktira,<br>ponezhe kamera<br>mozhe da sbyrka
-            </div>
-            
-            <!-- Плаващото меню -->
-            <div class="floating-nav">
-                <div class="menu-text">
-                    <i class="fas fa-bars" onclick="document.location='index.html'"><img src="assets/images/blackbar.png" alt="image"></i> 
-                </div>
-                <i class="fas fa-recycle"><img src="assets/images/blackarrow.png" alt="images" onclick="document.location='kamera.html'"></i>
+</head>
+
+<body>
+    <main class="phone-screen screen-2">
+
+        <section class="text-editor">
+
+            <label for="textInput">
+                Текст за превод
+            </label>
+
+            <textarea
+                id="textInput"
+                name="text"
+                rows="5"
+                placeholder="Въведете текст тук..."></textarea>
+
+            <div class="text-controls">
+
+                <button
+                    type="button"
+                    id="dictationButton">
+                    🎙 Диктовка
+                </button>
+
+                <button
+                    type="button"
+                    id="speakButton">
+                    🔊 Прочети текста
+                </button>
+
+                <button
+                    type="button"
+                    id="clearTextButton">
+                    Изчисти
+                </button>
+
             </div>
 
-            <div class="screen-gray-bg" style="justify-content: flex-end; padding-bottom: 40px;">
-                <div class="person-container">
+            <p
+                id="textStatus"
+                role="status"
+                aria-live="polite">
+                Въведете текст, за да започнете.
+            </p>
+
+        </section>
+
+        <nav class="floating-nav" aria-label="Навигация">
+            <button
+                type="button"
+                onclick="window.location.href='index.html'"
+                aria-label="Главно меню">
+                <img src="assets/images/blackbar.png" alt="">
+            </button>
+
+            <button
+                type="button"
+                onclick="window.location.href='kamera.html'"
+                aria-label="Към камерата">
+                <img src="assets/images/blackarrow.png" alt="">
+            </button>
+        </nav>
+
+        <section class="screen-gray-bg avatar-stage">
+
+            <div
+                id="avatarContainer"
+                class="avatar-container"
+                aria-label="Място за 3D аватар">
+
+                <div class="person-container" aria-hidden="true">
                     <div class="head"></div>
                     <div class="body"></div>
                 </div>
-                <div class="text-bold" style="margin-top: 0;">
-                    animirano choveche
-                </div>
+
+                <p id="avatarStatus">
+                    3D аватарът ще бъде показан тук.
+                </p>
+
             </div>
-        </div>
-    </body>
+
+        </section>
+
+    </main>
+</body>
 </html>
