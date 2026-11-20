@@ -1,0 +1,167 @@
+/* Основни настройки */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: Arial, Helvetica, sans-serif;
+}
+
+body {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    background-color: #f0f0f0; /* Фон на страницата извън телефона */
+}
+
+/* Контейнер, който имитира екрана на телефон */
+.phone-container {
+    width: 320px;
+    height: 650px;
+    background-color: #cbd2d9; /* Светло сив фон */
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    border: 1px solid #ccc;
+    box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+}
+
+/* --- ГОРНА ЛЕНТА --- */
+.top-bar {
+    background-color: #0f0f0f;
+    height: 60px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 15px;
+}
+
+.menu-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+}
+
+.hamburger {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.hamburger span {
+    display: block;
+    width: 22px;
+    height: 5px;
+    background-color: #e0e0e0;
+    border-radius: 3px;
+}
+
+.menu-text {
+    color: #e0e0e0;
+    font-size: 16px;
+}
+
+.top-icons {
+    display: flex;
+    gap: 12px;
+}
+
+.top-icons .icon {
+    width: 26px;
+    height: 26px;
+    fill: #e0e0e0;
+}
+
+/* --- ОСНОВНА ЧАСТ --- */
+.main-content {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: relative;
+    padding-top: 20px;
+}
+
+/* Бутони Play / Stop */
+.action-buttons {
+    position: absolute;
+    top: 20px;
+    right: 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.control-btn {
+    width: 55px;
+    height: 55px;
+    background-color: #0f0f0f;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    /* Правим формата на осмоъгълник, подобно на снимката */
+    clip-path: polygon(30% 0%, 70% 0%, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0% 70%, 0% 30%);
+}
+
+.play-triangle {
+    width: 0;
+    height: 0;
+    border-top: 12px solid transparent;
+    border-bottom: 12px solid transparent;
+    border-left: 18px solid white;
+    margin-left: 5px; /* Леко отместване за центриране */
+}
+
+.stop-square {
+    width: 18px;
+    height: 18px;
+    background-color: white;
+}
+
+/* Оранжев кръг */
+.orange-circle {
+    width: 110px;
+    height: 110px;
+    background-color: #fb8e3c;
+    border-radius: 50%;
+    margin-top: 40px;
+    margin-bottom: -10px; /* Застъпване с синия правоъгълник */
+    z-index: 2;
+}
+
+/* Син правоъгълник */
+.blue-rectangle {
+    width: 200px;
+    height: 280px;
+    background-color: #0047a8;
+    border-radius: 12px;
+    z-index: 1;
+}
+
+/* Текст */
+.caption-text {
+    margin-top: 20px;
+    color: #000;
+    font-size: 24px;
+    text-align: center;
+    font-weight: 800;
+    line-height: 1.2;
+    padding: 0 10px;
+}
+
+/* --- ДОЛНА ЛЕНТА --- */
+.bottom-bar {
+    background-color: #0f0f0f;
+    height: 40px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.bottom-bar span {
+    color: #e0e0e0;
+    font-size: 11px;
+}
