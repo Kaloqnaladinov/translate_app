@@ -1,97 +1,126 @@
-/* ==================================================================
-   Popup / modal styles for index.html
-   Additive only — style.css and animation.css remain untouched.
-   Does NOT redefine .btn-large / .btn-small / .menu-screen, which
-   already exist in css/style.css.
-   ================================================================== */
 
-/* Body scroll lock while a modal is open */
+/* =========================================
+   TRANSLATE APP — POPUPS
+   File: css/popups.css
+   ========================================= */
+
+/* ---------- BODY LOCK ---------- */
+
 body.modal-open {
     overflow: hidden;
 }
 
-/* ---------- Modal overlay (full-viewport backdrop) ---------- */
+/* ---------- OVERLAY ---------- */
+
 .modal-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.55);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 16px;
     z-index: 1000;
+
+    padding: 16px;
+
+    display: flex;
+    justify-content: center;
+    align-items: center;
+
+    background: rgba(0, 0, 0, 0.58);
+
     opacity: 0;
     visibility: hidden;
-    transition: opacity 0.2s ease, visibility 0s linear 0.2s;
+    pointer-events: none;
+
+    transition:
+        opacity 0.2s ease,
+        visibility 0.2s ease;
 }
 
 .modal-overlay.is-open {
     opacity: 1;
     visibility: visible;
-    transition: opacity 0.2s ease, visibility 0s linear 0s;
+    pointer-events: auto;
 }
 
-/* ---------- Modal content ---------- */
+/* ---------- MODAL CONTENT ---------- */
+
 .modal-content {
     position: relative;
-    background: #ffffff;
-    color: #111111;
-    border-radius: 16px;
-    padding: 24px 20px 20px;
+
     width: 100%;
     max-width: 420px;
     max-height: 90vh;
     overflow-y: auto;
+
+    padding: 25px 20px 20px;
+
+    border-radius: 17px;
+    background: #fff;
+    color: #111;
+
     box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
-    transform: scale(0.92) translateY(8px);
+
     opacity: 0;
-    transition: transform 0.2s ease, opacity 0.2s ease;
+    transform: scale(0.96) translateY(8px);
+
+    transition:
+        transform 0.2s ease,
+        opacity 0.2s ease;
 }
 
 .modal-overlay.is-open .modal-content {
-    transform: scale(1) translateY(0);
     opacity: 1;
+    transform: scale(1) translateY(0);
 }
 
-/* ---------- Close (X) button ---------- */
+/* ---------- CLOSE BUTTON ---------- */
+
 .modal-close {
     position: absolute;
     top: 8px;
     right: 8px;
+
     width: 36px;
     height: 36px;
-    border: none;
-    background: transparent;
-    font-size: 24px;
-    line-height: 1;
-    color: #444444;
-    cursor: pointer;
-    border-radius: 50%;
+
     padding: 0;
+    border: 0;
+    border-radius: 50%;
+
+    background: transparent;
+    color: #444;
+
     font-family: inherit;
-    transition: background 0.15s ease;
+    font-size: 25px;
+    line-height: 1;
+
+    cursor: pointer;
+
+    transition: background-color 0.15s ease;
 }
 
-.modal-close:hover,
-.modal-close:focus-visible {
-    background: #f0f0f0;
-    outline: none;
+.modal-close:hover {
+    background: #ededed;
 }
 
-/* ---------- Title and body ---------- */
+/* ---------- TITLE ---------- */
+
 .modal-title {
-    margin: 0 32px 16px 0;
+    margin: 0 35px 17px 0;
+
+    color: #111;
     font-size: 20px;
-    line-height: 1.25;
+    font-weight: 800;
+    line-height: 1.3;
 }
 
 .modal-body {
     margin: 0;
-    font-size: 16px;
-    color: #333333;
+    color: #333;
+    font-size: 15px;
+    line-height: 1.5;
 }
 
-/* ---------- Form ---------- */
+/* ---------- FORM ---------- */
+
 .modal-form {
     display: flex;
     flex-direction: column;
@@ -101,72 +130,111 @@ body.modal-open {
 .modal-field {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 7px;
+
+    color: #333;
     font-size: 14px;
-    color: #333333;
+    font-weight: 700;
 }
 
 .modal-field input,
 .modal-field textarea {
     width: 100%;
-    padding: 10px 12px;
-    border: 1px solid #cccccc;
-    border-radius: 8px;
-    font-size: 15px;
-    font-family: inherit;
+    min-height: 42px;
+
+    padding: 11px 12px;
+
+    border: 1px solid #ccc;
+    border-radius: 9px;
+
     background: #fafafa;
-    color: #111111;
-    resize: vertical;
+    color: #111;
+
+    font-family: inherit;
+    font-size: 15px;
+
     box-sizing: border-box;
+}
+
+.modal-field textarea {
+    min-height: 105px;
+    resize: vertical;
+    line-height: 1.5;
 }
 
 .modal-field input:focus,
 .modal-field textarea:focus {
-    outline: none;
-    border-color: #111111;
-    background: #ffffff;
+    outline: 2px solid #31516c;
+    outline-offset: 1px;
+    border-color: #31516c;
+    background: #fff;
 }
+
+/* ---------- SUBMIT ---------- */
 
 .modal-submit {
+    min-height: 45px;
     padding: 12px 16px;
-    background: #111111;
-    color: #ffffff;
-    border: none;
+
+    border: 0;
     border-radius: 10px;
-    font-size: 16px;
+
+    background: #111;
+    color: #fff;
+
     font-family: inherit;
+    font-size: 15px;
+    font-weight: 700;
+
     cursor: pointer;
-    transition: background 0.15s ease;
 }
 
-.modal-submit:hover,
-.modal-submit:focus-visible {
-    background: #2b2b2b;
-    outline: none;
+.modal-submit:hover {
+    background: #303030;
 }
 
-/* ---------- Status messages ---------- */
-.modal-error {
+/* ---------- STATUS MESSAGES ---------- */
+
+.modal-error,
+.modal-message {
     margin: 0;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.modal-error {
     color: #b00020;
-    font-size: 14px;
 }
 
 .modal-message {
-    margin: 0;
-    color: #0a6b2e;
-    font-size: 14px;
+    color: #176b36;
 }
 
-/* ---------- Small screens ---------- */
+/* ---------- RESPONSIVE ---------- */
+
 @media (max-width: 480px) {
+    .modal-overlay {
+        padding: 12px;
+    }
+
     .modal-content {
-        padding: 20px 16px 16px;
-        border-radius: 12px;
         max-height: 92vh;
+        padding: 22px 16px 17px;
+        border-radius: 14px;
     }
 
     .modal-title {
         font-size: 18px;
+    }
+}
+
+/* ---------- REDUCED MOTION ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+    .modal-overlay,
+    .modal-content,
+    .modal-submit,
+    .modal-close {
+        transition: none;
     }
 }

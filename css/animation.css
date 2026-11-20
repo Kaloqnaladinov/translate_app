@@ -1,86 +1,166 @@
-/* ============================================
-   ANIMATION.CSS
-   Всички анимации са тук, за да може лесно
-   да се добавят / премахват без да се пипа main.css
-   ============================================ */
 
-/* --- Човечето: леко дишане (увеличаване/намаляване) --- */
+/* =========================================
+   TRANSLATE APP — ANIMATIONS
+   File: css/animation.css
+   ========================================= */
+
+/* ---------- PAGE APPEARANCE ---------- */
+
+.phone-screen {
+    animation: screenIn 0.4s ease-out both;
+}
+
+@keyframes screenIn {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* ---------- TEMPORARY AVATAR ---------- */
+
 .head {
-    animation: headBreathe 2.5s ease-in-out infinite;
     transform-origin: center bottom;
+    animation: headBreathe 2.8s ease-in-out infinite;
 }
 
 .body {
-    animation: bodyBreathe 2.5s ease-in-out infinite;
     transform-origin: center top;
+    animation: bodyBreathe 2.8s ease-in-out infinite;
 }
 
 @keyframes headBreathe {
-    0%, 100% { transform: translateY(0) scale(1); }
-    50%      { transform: translateY(-4px) scale(1.03); }
+    0%, 100% {
+        transform: translateY(0) scale(1);
+    }
+
+    50% {
+        transform: translateY(-3px) scale(1.025);
+    }
 }
 
 @keyframes bodyBreathe {
-    0%, 100% { transform: scaleY(1); }
-    50%      { transform: scaleY(1.02); }
+    0%, 100% {
+        transform: scaleY(1);
+    }
+
+    50% {
+        transform: scaleY(1.015);
+    }
 }
 
-/* --- Плаващо меню: леко полюляване --- */
-.floating-nav {
-    animation: navFloat 3s ease-in-out infinite;
-}
+/* ---------- BUTTON INTERACTIONS ---------- */
 
-@keyframes navFloat {
-    0%, 100% { transform: translate(-50%, -50%) translateY(0); }
-    50%      { transform: translate(-50%, -50%) translateY(-6px); }
-}
-
-/* --- Бутони: леко "дишане" при hover --- */
 .btn-large,
-.btn-small {
-    transition: transform 0.15s ease, background-color 0.2s ease;
+.btn-small,
+.camera-controls button,
+.recording-controls button,
+.text-controls button,
+.modal-submit {
+    transition:
+        transform 0.18s ease,
+        background-color 0.18s ease,
+        opacity 0.18s ease,
+        box-shadow 0.18s ease;
 }
 
 .btn-large:hover,
 .btn-small:hover {
     background-color: #b6c2cc;
-    transform: scale(1.02);
+    transform: translateY(-2px);
+}
+
+.camera-controls button:hover,
+.recording-controls button:hover {
+    filter: brightness(1.2);
+    transform: translateY(-1px);
+}
+
+.text-controls button:hover {
+    background-color: #b6c2cc;
+    transform: translateY(-1px);
+}
+
+.modal-submit:hover {
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.16);
 }
 
 .btn-large:active,
-.btn-small:active {
+.btn-small:active,
+.camera-controls button:active,
+.recording-controls button:active,
+.text-controls button:active {
     transform: scale(0.98);
 }
 
-/* --- Плавно появяване на текста --- */
+/* ---------- NAVIGATION ICONS ---------- */
+
+.header-black img,
+.floating-nav img {
+    transition:
+        transform 0.2s ease,
+        opacity 0.2s ease;
+}
+
+.header-black button:hover img,
+.floating-nav button:hover img {
+    transform: scale(1.1);
+    opacity: 0.8;
+}
+
+/* ---------- TEXT APPEARANCE ---------- */
+
 .text-bold,
-.top-white-text {
-    animation: fadeIn 0.8s ease-out both;
+.text-editor,
+.dataset-content,
+.camera-metadata {
+    animation: fadeIn 0.5s ease-out both;
 }
 
 @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(8px); }
-    to   { opacity: 1; transform: translateY(0); }
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
-/* --- Икони в header: лек hover ефект --- */
-.header-black img,
-.floating-nav img {
-    transition: transform 0.2s ease, opacity 0.2s ease;
+/* ---------- FLOATING NAVIGATION ---------- */
+
+.floating-nav {
+    animation: navAppear 0.4s ease-out both;
 }
 
-.header-black img:hover,
-.floating-nav img:hover {
-    transform: scale(1.15);
-    opacity: 0.85;
+@keyframes navAppear {
+    from {
+        opacity: 0;
+        transform: translateY(5px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
-/* --- Плавен преход при смяна на екрани --- */
-.phone-screen {
-    animation: screenIn 0.5s ease-out both;
-}
+/* ---------- REDUCED MOTION ---------- */
 
-@keyframes screenIn {
-    from { opacity: 0; transform: scale(0.98); }
-    to   { opacity: 1; transform: scale(1); }
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        scroll-behavior: auto !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
 }
