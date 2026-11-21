@@ -24,12 +24,17 @@
 
     const playButton = document.querySelector('.play-btn');
     const stopButton = document.querySelector('.stop-btn');
+    const switchCameraButton = document.querySelector(
+    '#switch-camera'
+);
 
     const statusElement = document.querySelector('.text-bold');
 
     /* ---------- Camera state ---------- */
 
     let cameraStream = null;
+    let currentFacingMode = 'user';
+let isSwitchingCamera = false;
     let mediaRecorder = null;
     let recordedChunks = [];
     let selectedMimeType = '';
@@ -178,6 +183,69 @@
 
         await videoPreview.play();
     }
+
+async function switchCamera() {
+    if (isSwitchingCamera) return;
+
+    if (mediaRecorder?.state === 'recording') {
+        setStatus('Спри записа, преди да смениш камерата.');
+        return;
+    }
+
+    isSwitchingCamera = true;
+
+    const nextFacingMode =
+        currentFacingMode === 'user'
+            ? 'environment'
+            : 'user';
+
+    try {
+        if (!navigator.mediaDevices?.getUserMedia) {
+            throw new Error('Няма достъп до камерата.');
+        }
+
+        setStatus('Търсене на камера...');
+
+        const newStream = await navigator.mediaDevices.getUserMedia({
+            video: {
+                facingMode: { exact: nextFacingMode },
+                width: { ideal: 1280 },
+                height: { ideal: 720 }
+            },
+            audio: false
+        });
+
+        const oldStream = cameraStream;
+
+        cameraStream = newStream;
+        currentFacingMode = nextFacingMode;
+
+        if (videoPreview) {
+            videoPreview.srcObject = newStream;
+            await videoPreview.play();
+        }
+
+        if (oldStream) {
+            oldStream.getTracks().forEach(track => track.stop());
+        }
+
+        setStatus(
+            currentFacingMode === 'environment'
+                ? 'Задната камера е активна.'
+                : 'Предната камера е активна.'
+        );
+
+    } catch (error) {
+        if (nextFacingMode === 'environment') {
+            setStatus('Не е намерена задна камера.');
+        } else {
+            setStatus('Не може да се включи предната камера.');
+        }
+    } finally {
+        isSwitchingCamera = false;
+    }
+}
+
 
     function stopCamera() {
         if (cameraStream) {
@@ -395,6 +463,22 @@
             stopRecording
         );
     }
+    if (switchCameraButton) {
+    switchCameraButton.addEventListener(
+        'click',
+        switchCamera
+    );
+
+    switchCameraButton.addEventListener(
+        'keydown',
+        event => {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                switchCamera();
+            }
+        }
+    );
+}
 
     window.addEventListener('pagehide', () => {
         pageIsClosing = true;
