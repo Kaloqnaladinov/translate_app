@@ -3,15 +3,12 @@
 
 from __future__ import annotations
 
-from bisect import bisect_right
+
 from dataclasses import dataclass
 import math
-from pathlib import Path
-from pyexpat import features
-from pyexpat import features
 from typing import Any, Sequence
 
-from matplotlib import scale
+
 
 from ml.dataset import (
     DatasetError,
