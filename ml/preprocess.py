@@ -7,7 +7,11 @@ from bisect import bisect_right
 from dataclasses import dataclass
 import math
 from pathlib import Path
+from pyexpat import features
+from pyexpat import features
 from typing import Any, Sequence
+
+from matplotlib import scale
 
 from ml.dataset import (
     DatasetError,
@@ -222,18 +226,20 @@ def _calculate_reference(
     return anchor, max(scale, 1e-6)
 
 
+
+
 def _normalize_group(
     landmarks: list[dict[str, Any]] | None,
     anchor: tuple[float, float, float],
     scale: float,
+    expected_count: int,
 ) -> list[float]:
     """Normalize one landmark group into a flat numeric list."""
 
-    values = []
-
     if landmarks is None:
-        # Preserve the expected feature dimensions.
-        return [0.0] * (21 * VALUES_PER_POINT)
+        return [0.0] * (expected_count * VALUES_PER_POINT)
+
+    values = []
 
     for point in landmarks:
         x = (float(point["x"]) - anchor[0]) / scale
@@ -245,6 +251,7 @@ def _normalize_group(
         values.extend((x, y, z, visibility))
 
     return values
+
 
 
 def preprocess_frame(frame: dict[str, Any]) -> tuple[float, ...]:
@@ -271,19 +278,9 @@ def preprocess_frame(frame: dict[str, Any]) -> tuple[float, ...]:
     features = []
 
     # Pose: 33 points.
-    features.extend(
-        _normalize_group(pose, anchor, scale)
-    )
-
-    # Left hand: 21 points.
-    features.extend(
-        _normalize_group(left_hand, anchor, scale)
-    )
-
-    # Right hand: 21 points.
-    features.extend(
-        _normalize_group(right_hand, anchor, scale)
-    )
+    features.extend(_normalize_group(pose, anchor, scale, 33))
+    features.extend(_normalize_group(left_hand, anchor, scale, 21))
+    features.extend(_normalize_group(right_hand, anchor, scale, 21))
 
     # Detection masks: pose, left hand, right hand.
     features.extend(
