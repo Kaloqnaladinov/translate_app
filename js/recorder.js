@@ -103,7 +103,7 @@
         videoPreview.autoplay = true;
         videoPreview.muted = true;
         videoPreview.playsInline = true;
-
+        videoPreview.style.transform = 'scaleX(-1)';
         videoPreview.setAttribute(
             'aria-label',
             'Изображение от камерата'
@@ -121,6 +121,7 @@
             objectFit: 'cover',
             borderRadius: '16px',
             backgroundColor: '#111'
+            
         });
 
         if (headElement) {
