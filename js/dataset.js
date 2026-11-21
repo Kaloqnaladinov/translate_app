@@ -263,11 +263,48 @@
             deleteRecording(recording);
         });
 
-        actions.append(
-            fileLink,
-            editButton,
-            deleteButton
+        const extractButton = createElement(
+            'button',
+            'Извлечи landmarks'
         );
+
+        extractButton.type = 'button';
+
+        extractButton.addEventListener('click', async () => {
+            if (!window.TranslateLandmarks) {
+                setStatus('Грешка: landmarks.js не е зареден.');
+                return;
+            }
+
+            extractButton.disabled = true;
+            extractButton.textContent = 'Извличане...';
+
+            try {
+                const result =
+                    await window.TranslateLandmarks.extract(recording);
+
+                const details = result.result;
+
+                setStatus(
+                    `Успешно извличане: ${details.processed_frames} кадъра. ` +
+                    `Файл: ${details.output_filename}`
+                );
+
+            } catch (error) {
+                setStatus(`Грешка: ${error.message}`);
+
+            } finally {
+                extractButton.disabled = false;
+                extractButton.textContent = 'Извлечи landmarks';
+            }
+        });
+
+        actions.append(
+    fileLink,
+    editButton,
+    extractButton,
+    deleteButton
+);
 
         card.append(
             title,
