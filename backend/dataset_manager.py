@@ -1,9 +1,4 @@
-
-"""SQLite metadata management for the Translate App recording dataset.
-
-This module stores recording metadata and exposes the functions currently used
-by backend/main.py. Video uploads are written by backend/recorder.py.
-"""
+"""SQLite metadata management for the Translate App dataset."""
 
 from __future__ import annotations
 
@@ -13,9 +8,17 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
 
+
+# ---------------------------------------------------------------------
+# Project paths
+# ---------------------------------------------------------------------
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATASET_DIR = PROJECT_ROOT / "dataset"
 RAW_DIR = DATASET_DIR / "raw"
+PROCESSED_DIR = DATASET_DIR / "processed"
+MODELS_DIR = DATASET_DIR / "models"
+
 DATABASE_PATH = DATASET_DIR / "metadata.sqlite3"
 
 MAX_UPLOAD_BYTES = 100 * 1024 * 1024
@@ -33,62 +36,60 @@ _STORED_FILENAME_RE = re.compile(
 )
 
 
-# ---------------------------------------------------------------------------
-# Errors
-# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------
+# Exceptions
+# ---------------------------------------------------------------------
 
 class DatasetError(Exception):
-    """Base class for dataset metadata errors."""
+    """Base exception for dataset operations."""
 
 
 class ValidationError(DatasetError):
-    """Input metadata is invalid."""
+    """Invalid recording metadata or identifier."""
 
 
 class NotFoundError(DatasetError):
-    """The requested recording does not exist."""
+    """Requested recording does not exist."""
 
 
 class ConflictError(DatasetError):
-    """A unique metadata value already exists."""
+    """Recording identifier or stored filename already exists."""
 
 
 class DatabaseError(DatasetError):
     """SQLite operation failed."""
 
 
-# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------
 # Database connection
-# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------
 
 @contextmanager
 def _connect() -> Iterator[sqlite3.Connection]:
-    """Open a configured connection and always close it."""
+    """Open a SQLite connection and manage its transaction."""
 
     DATASET_DIR.mkdir(parents=True, exist_ok=True)
+
+    connection = None
 
     try:
         connection = sqlite3.connect(
             str(DATABASE_PATH),
-            timeout=5
+            timeout=10,
         )
-    except sqlite3.Error as exc:
-        raise DatabaseError(
-            "Could not open the recordings database."
-        ) from exc
 
-    connection.row_factory = sqlite3.Row
+        connection.row_factory = sqlite3.Row
 
-    try:
         connection.execute("PRAGMA foreign_keys = ON")
-        connection.execute("PRAGMA busy_timeout = 5000")
+        connection.execute("PRAGMA busy_timeout = 10000")
 
         yield connection
 
         connection.commit()
 
     except sqlite3.IntegrityError as exc:
-        connection.rollback()
+        if connection is not None:
+            connection.rollback()
 
         message = str(exc).lower()
 
@@ -102,66 +103,30 @@ def _connect() -> Iterator[sqlite3.Connection]:
         ) from exc
 
     except sqlite3.Error as exc:
-        connection.rollback()
+        if connection is not None:
+            connection.rollback()
 
         raise DatabaseError(
             "A database operation failed."
         ) from exc
 
     except Exception:
-        connection.rollback()
+        if connection is not None:
+            connection.rollback()
+
         raise
 
     finally:
-        connection.close()
+        if connection is not None:
+            connection.close()
 
 
-# ---------------------------------------------------------------------------
-# Metadata validation
-# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------
+# Validation
+# ---------------------------------------------------------------------
 
-def _validate_recording_metadata(
-    recording: dict[str, Any]
-) -> dict[str, Any]:
-    """Validate and normalize metadata received from the API layer."""
-
-    if not isinstance(recording, dict):
-        raise ValidationError("recording must be a dictionary.")
-
-    required = (
-        "id",
-        "participant_id",
-        "consent_given",
-        "created_at",
-        "original_filename",
-        "stored_filename",
-        "content_type",
-        "file_size",
-    )
-
-    missing = [
-        key for key in required
-        if key not in recording
-    ]
-
-    if missing:
-        raise ValidationError(
-            f"Missing recording fields: {', '.join(missing)}."
-        )
-
-    # Recording ID
-    recording_id = recording["id"]
-
-    if (
-        not isinstance(recording_id, str)
-        or not _RECORDING_ID_RE.fullmatch(recording_id)
-    ):
-        raise ValidationError(
-            "id must be a 32-character lowercase hexadecimal UUID."
-        )
-
-    # Participant ID
-    participant_id = recording["participant_id"]
+def _validate_participant_id(participant_id: str) -> str:
+    """Validate a pseudonymous participant identifier."""
 
     if not isinstance(participant_id, str):
         raise ValidationError(
@@ -172,199 +137,111 @@ def _validate_recording_metadata(
 
     if not _PARTICIPANT_RE.fullmatch(participant_id):
         raise ValidationError(
-            "participant_id must be 3-40 letters, numbers, '_' or '-'."
+            "participant_id must contain 3-40 letters, numbers, "
+            "underscores or hyphens."
         )
 
-    # Consent
-    if recording["consent_given"] is not True:
-        raise ValidationError(
-            "Consent is required to store a recording."
-        )
+    return participant_id
 
-    # Timestamp
-    created_at = recording["created_at"]
+
+def _validate_recording_id(recording_id: str) -> str:
+    """Validate an application-generated recording ID."""
 
     if (
-        not isinstance(created_at, str)
-        or not created_at.strip()
-        or len(created_at) > 64
+        not isinstance(recording_id, str)
+        or not _RECORDING_ID_RE.fullmatch(recording_id)
     ):
         raise ValidationError(
-            "created_at must be a non-empty timestamp string."
+            "Invalid recording ID."
         )
 
-    # Original filename
-    original_filename = recording["original_filename"]
+    return recording_id
+
+
+def _validate_label(label: str | None) -> str | None:
+    """Normalize a recording label."""
+
+    if label is None:
+        return None
+
+    if not isinstance(label, str):
+        raise ValidationError(
+            "label must be a string or null."
+        )
+
+    label = label.strip()
+
+    if not label:
+        return None
+
+    if len(label) > 80:
+        raise ValidationError(
+            "label must contain at most 80 characters."
+        )
+
+    return label
+
+
+def _validate_stored_filename(filename: str) -> str:
+    """Only accept filenames generated by the application."""
 
     if (
-        not isinstance(original_filename, str)
-        or not original_filename.strip()
-    ):
-        raise ValidationError(
-            "original_filename must be a non-empty string."
-        )
-
-    # Normalize Windows and POSIX path separators.
-    original_filename = (
-        original_filename
-        .replace("\\", "/")
-        .split("/")[-1]
-    )
-
-    original_filename = (
-        original_filename
-        .replace("\x00", "")
-        .strip()
-    )
-
-    if not original_filename or len(original_filename) > 255:
-        raise ValidationError(
-            "original_filename must contain 1-255 characters."
-        )
-
-    # Stored filename must be generated by the application.
-    stored_filename = recording["stored_filename"]
-
-    if (
-        not isinstance(stored_filename, str)
-        or not _STORED_FILENAME_RE.fullmatch(stored_filename)
-    ):
-        raise ValidationError(
-            "stored_filename is not a valid generated video filename."
-        )
-
-    # Content type
-    content_type = recording["content_type"]
-
-    if not isinstance(content_type, str):
-        raise ValidationError(
-            "content_type must be a string."
-        )
-
-    expected_extension = ALLOWED_VIDEO_TYPES.get(content_type)
-
-    if (
-        expected_extension is None
-        or not stored_filename.endswith(expected_extension)
-    ):
-        raise ValidationError(
-            "content_type does not match the stored video extension."
-        )
-
-    # File size
-    file_size = recording["file_size"]
-
-    if isinstance(file_size, bool) or not isinstance(file_size, int):
-        raise ValidationError(
-            "file_size must be an integer."
-        )
-
-    if not 1 <= file_size <= MAX_UPLOAD_BYTES:
-        raise ValidationError(
-            "file_size must be between 1 byte and 100 MB."
-        )
-
-    # Label
-    label = recording.get("label")
-
-    if label is not None:
-        if not isinstance(label, str):
-            raise ValidationError(
-                "label must be a string or null."
-            )
-
-        label = label.strip() or None
-
-        if label is not None and len(label) > 80:
-            raise ValidationError(
-                "label must be 80 characters or fewer."
-            )
-
-    return {
-        "id": recording_id,
-        "participant_id": participant_id,
-        "label": label,
-        "consent_given": 1,
-        "created_at": created_at.strip(),
-        "original_filename": original_filename,
-        "stored_filename": stored_filename,
-        "content_type": content_type,
-        "file_size": file_size,
-    }
-
-
-# ---------------------------------------------------------------------------
-# Filesystem path security
-# ---------------------------------------------------------------------------
-
-def _get_safe_video_path(stored_filename: str) -> Path:
-    """Resolve a generated filename and ensure it stays inside dataset/raw."""
-
-    if (
-        not isinstance(stored_filename, str)
-        or not _STORED_FILENAME_RE.fullmatch(stored_filename)
+        not isinstance(filename, str)
+        or not _STORED_FILENAME_RE.fullmatch(filename)
     ):
         raise ValidationError(
             "Invalid stored video filename."
         )
 
+    return filename
+
+
+def _get_safe_video_path(stored_filename: str) -> Path:
+    """Resolve a video path and prevent directory traversal."""
+
+    filename = _validate_stored_filename(stored_filename)
+
     raw_root = RAW_DIR.resolve()
-    candidate = (RAW_DIR / stored_filename).resolve()
+    video_path = (RAW_DIR / filename).resolve()
 
     try:
-        candidate.relative_to(raw_root)
-
+        video_path.relative_to(raw_root)
     except ValueError as exc:
         raise ValidationError(
-            "Video path escapes the raw dataset directory."
+            "Video path is outside dataset/raw."
         ) from exc
 
-    if candidate.parent != raw_root:
+    if video_path.parent != raw_root:
         raise ValidationError(
             "Video must be stored directly inside dataset/raw."
         )
 
-    return candidate
+    return video_path
 
 
-# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------
 # Database initialization
-# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------
 
 def initialize_database() -> None:
-    """Create dataset folders and the recordings table if missing."""
+    """Create the required directories and database table."""
 
     RAW_DIR.mkdir(parents=True, exist_ok=True)
-
-    (DATASET_DIR / "processed").mkdir(
-        parents=True,
-        exist_ok=True
-    )
-
-    (DATASET_DIR / "models").mkdir(
-        parents=True,
-        exist_ok=True
-    )
+    PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
+    MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
     with _connect() as connection:
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS recordings (
                 id TEXT PRIMARY KEY,
-
                 participant_id TEXT NOT NULL,
-
                 label TEXT,
-
                 consent_given INTEGER NOT NULL
                     CHECK (consent_given IN (0, 1)),
-
                 created_at TEXT NOT NULL,
-
                 original_filename TEXT NOT NULL,
-
                 stored_filename TEXT NOT NULL UNIQUE,
-
                 content_type TEXT NOT NULL
                     CHECK (
                         content_type IN (
@@ -373,7 +250,6 @@ def initialize_database() -> None:
                             'video/quicktime'
                         )
                     ),
-
                 file_size INTEGER NOT NULL
                     CHECK (
                         file_size > 0
@@ -383,35 +259,139 @@ def initialize_database() -> None:
             """
         )
 
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_recordings_created_at
+            ON recordings(created_at)
+            """
+        )
 
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_recordings_participant
+            ON recordings(participant_id)
+            """
+        )
 
-def save_recording_metadata(
-    recording: dict[str, Any]
-) -> None:
-    """Save metadata for a video already written by backend/recorder.py."""
 
-    data = _validate_recording_metadata(recording)
-
+# Compatibility name used by the API startup.
+def init_db() -> None:
     initialize_database()
 
-    video_path = _get_safe_video_path(
-        data["stored_filename"]
+
+# ---------------------------------------------------------------------
+# Record conversion
+# ---------------------------------------------------------------------
+
+def _row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+    """Convert a SQLite row to a normal Python dictionary."""
+
+    record = dict(row)
+
+    record["consent_given"] = bool(
+        record["consent_given"]
     )
 
-    # The file must exist inside dataset/raw.
-    if not video_path.is_file():
+    return record
+
+
+# ---------------------------------------------------------------------
+# Create recording
+# ---------------------------------------------------------------------
+
+def add_recording(
+    *,
+    recording_id: str,
+    participant_id: str,
+    consent_given: bool,
+    stored_filename: str,
+    content_type: str,
+    file_size: int,
+    original_filename: str,
+    created_at: str,
+    label: str | None = None,
+) -> dict[str, Any]:
+    """
+    Save metadata for a video already stored by recorder.py.
+
+    The video must exist before this function is called.
+    """
+
+    recording_id = _validate_recording_id(recording_id)
+    participant_id = _validate_participant_id(participant_id)
+    stored_filename = _validate_stored_filename(stored_filename)
+    label = _validate_label(label)
+
+    if consent_given is not True:
         raise ValidationError(
-            "The uploaded video file does not exist in dataset/raw."
+            "Consent is required to store a recording."
         )
 
-    # Verify the actual file size against the metadata.
-    if video_path.stat().st_size != data["file_size"]:
+    if content_type not in ALLOWED_VIDEO_TYPES:
         raise ValidationError(
-            "The actual video size does not match file_size metadata."
+            "Unsupported video content type."
         )
+
+    expected_extension = ALLOWED_VIDEO_TYPES[content_type]
+
+    if not stored_filename.endswith(expected_extension):
+        raise ValidationError(
+            "Video extension does not match its content type."
+        )
+
+    if (
+        isinstance(file_size, bool)
+        or not isinstance(file_size, int)
+        or not 1 <= file_size <= MAX_UPLOAD_BYTES
+    ):
+        raise ValidationError(
+            "Invalid video file size."
+        )
+
+    if (
+        not isinstance(created_at, str)
+        or not created_at.strip()
+        or len(created_at) > 64
+    ):
+        raise ValidationError(
+            "Invalid created_at timestamp."
+        )
+
+    if (
+        not isinstance(original_filename, str)
+        or not original_filename.strip()
+    ):
+        raise ValidationError(
+            "Original filename is required."
+        )
+
+    # Never store a client-supplied directory path.
+    original_filename = (
+        original_filename
+        .replace("\\", "/")
+        .split("/")[-1]
+        .replace("\x00", "")
+        .strip()
+    )
+
+    if not original_filename or len(original_filename) > 255:
+        raise ValidationError(
+            "Invalid original filename."
+        )
+
+    video_path = _get_safe_video_path(stored_filename)
+
+    if not video_path.is_file():
+        raise ValidationError(
+            "The uploaded video does not exist."
+        )
+
+    if video_path.stat().st_size != file_size:
+        raise ValidationError(
+            "Video file size does not match metadata."
+        )
+
+    initialize_database()
 
     with _connect() as connection:
         connection.execute(
@@ -430,88 +410,179 @@ def save_recording_metadata(
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                data["id"],
-                data["participant_id"],
-                data["label"],
-                data["consent_given"],
-                data["created_at"],
-                data["original_filename"],
-                data["stored_filename"],
-                data["content_type"],
-                data["file_size"],
+                recording_id,
+                participant_id,
+                label,
+                1,
+                created_at.strip(),
+                original_filename,
+                stored_filename,
+                content_type,
+                file_size,
             ),
         )
 
+    return get_recording_by_id(recording_id)
 
-def list_recordings() -> list[dict[str, Any]]:
-    """Return metadata without exposing internal storage filenames."""
+
+# ---------------------------------------------------------------------
+# Read recordings
+# ---------------------------------------------------------------------
+
+def get_all_recordings() -> list[dict[str, Any]]:
+    """Return all recording metadata, newest first."""
 
     initialize_database()
 
     with _connect() as connection:
         rows = connection.execute(
             """
-            SELECT
-                id,
-                participant_id,
-                label,
-                consent_given,
-                created_at,
-                original_filename,
-                content_type,
-                file_size
+            SELECT *
             FROM recordings
             ORDER BY created_at DESC
             """
         ).fetchall()
 
-    return [
-        dict(row)
-        for row in rows
-    ]
+    return [_row_to_dict(row) for row in rows]
 
 
-def delete_recording(recording_id: str) -> bool:
-    """Delete a recording row and its safely-resolved video file."""
+def get_recording_by_id(
+    recording_id: str,
+) -> dict[str, Any]:
+    """Return one recording or raise NotFoundError."""
 
-    if (
-        not isinstance(recording_id, str)
-        or not _RECORDING_ID_RE.fullmatch(recording_id)
-    ):
-        raise ValidationError(
-            "recording_id must be a 32-character lowercase hexadecimal UUID."
-        )
+    recording_id = _validate_recording_id(recording_id)
 
     initialize_database()
 
     with _connect() as connection:
         row = connection.execute(
             """
-            SELECT stored_filename
+            SELECT *
             FROM recordings
             WHERE id = ?
             """,
             (recording_id,),
         ).fetchone()
 
-        if row is None:
-            return False
-
-        video_path = _get_safe_video_path(
-            row["stored_filename"]
+    if row is None:
+        raise NotFoundError(
+            "Recording was not found."
         )
 
-        connection.execute(
-            "DELETE FROM recordings WHERE id = ?",
+    return _row_to_dict(row)
+
+
+def get_video_path(recording: dict[str, Any]) -> Path:
+    """Return the safe absolute path to a recording's original video."""
+
+    stored_filename = recording.get("stored_filename")
+
+    video_path = _get_safe_video_path(stored_filename)
+
+    if not video_path.is_file():
+        raise NotFoundError(
+            "The original video file is missing."
+        )
+
+    return video_path
+
+
+# ---------------------------------------------------------------------
+# Update recording
+# ---------------------------------------------------------------------
+
+def update_label(
+    recording_id: str,
+    label: str | None,
+) -> dict[str, Any]:
+    """Update the label of an existing recording."""
+
+    recording_id = _validate_recording_id(recording_id)
+    label = _validate_label(label)
+
+    initialize_database()
+
+    with _connect() as connection:
+        cursor = connection.execute(
+            """
+            UPDATE recordings
+            SET label = ?
+            WHERE id = ?
+            """,
+            (label, recording_id),
+        )
+
+        if cursor.rowcount == 0:
+            raise NotFoundError(
+                "Recording was not found."
+            )
+
+    return get_recording_by_id(recording_id)
+
+
+# ---------------------------------------------------------------------
+# Delete recording metadata
+# ---------------------------------------------------------------------
+
+def delete_recording_by_id(recording_id: str) -> bool:
+    """
+    Delete only the database metadata.
+
+    IMPORTANT:
+    The original video is preserved in dataset/raw/.
+    """
+
+    recording_id = _validate_recording_id(recording_id)
+
+    initialize_database()
+
+    with _connect() as connection:
+        cursor = connection.execute(
+            """
+            DELETE FROM recordings
+            WHERE id = ?
+            """,
             (recording_id,),
         )
 
-    # Delete the file only after the database transaction commits.
-    #
-    # SQLite and filesystem operations are not atomic. If file deletion
-    # fails here, the database row is already gone and an orphan file
-    # may need manual cleanup.
-
-    video_path.unlink(missing_ok=True)
+        if cursor.rowcount == 0:
+            raise NotFoundError(
+                "Recording was not found."
+            )
 
     return True
+
+
+# ---------------------------------------------------------------------
+# Backward-compatible helper names
+# ---------------------------------------------------------------------
+
+def save_recording_metadata(
+    recording: dict[str, Any],
+) -> dict[str, Any]:
+    """Compatibility wrapper for metadata creation."""
+
+    return add_recording(
+        recording_id=recording["id"],
+        participant_id=recording["participant_id"],
+        consent_given=recording["consent_given"],
+        stored_filename=recording["stored_filename"],
+        content_type=recording["content_type"],
+        file_size=recording["file_size"],
+        original_filename=recording["original_filename"],
+        created_at=recording["created_at"],
+        label=recording.get("label"),
+    )
+
+
+def list_recordings() -> list[dict[str, Any]]:
+    """Compatibility wrapper for listing recordings."""
+
+    return get_all_recordings()
+
+
+def delete_recording(recording_id: str) -> bool:
+    """Compatibility wrapper; preserves the original video."""
+
+    return delete_recording_by_id(recording_id)
