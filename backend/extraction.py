@@ -11,7 +11,7 @@ from backend.dataset_manager import DATASET_DIR, RAW_DIR
 
 PROCESSED_DIR = DATASET_DIR / "processed"
 SUPPORTED_EXTENSIONS = {".webm", ".mp4", ".mov"}
-EXTRACTION_VERSION = "1.0"
+EXTRACTION_VERSION = "1.1"
 
 
 class ExtractionError(Exception):
@@ -24,7 +24,9 @@ def _validate_video_path(video_path: str | Path) -> Path:
     source = Path(video_path).resolve()
 
     if source.parent != raw_root:
-        raise ExtractionError("Video must be stored directly inside dataset/raw.")
+        raise ExtractionError(
+            "Video must be stored directly inside dataset/raw."
+        )
 
     if not source.is_file():
         raise ExtractionError("Video file does not exist.")
@@ -49,7 +51,6 @@ def _landmarks_to_list(landmarks: Any) -> list[dict[str, float]] | None:
             "z": float(point.z),
         }
 
-        # Pose landmarks may also contain visibility information.
         if hasattr(point, "visibility"):
             item["visibility"] = float(point.visibility)
 
@@ -64,6 +65,9 @@ def extract_video_landmarks(
     model_complexity: int = 1,
     min_detection_confidence: float = 0.5,
     min_tracking_confidence: float = 0.5,
+    recording_id: str | None = None,
+    label: str | None = None,
+    participant_id: str | None = None,
 ) -> dict[str, Any]:
     """
     Extract pose and both-hand landmarks from a video.
@@ -88,10 +92,18 @@ def extract_video_landmarks(
         ):
             raise ExtractionError(f"{name} must be between 0.0 and 1.0.")
 
+    for name, value in (
+        ("recording_id", recording_id),
+        ("label", label),
+        ("participant_id", participant_id),
+    ):
+        if value is not None and (
+            not isinstance(value, str) or not value.strip()
+        ):
+            raise ExtractionError(f"{name} must be a non-empty string.")
+
     source = _validate_video_path(video_path)
 
-    # Imports are delayed so the rest of the backend can start
-    # even when the extraction dependencies are not installed.
     try:
         import cv2
         import mediapipe as mp
@@ -108,7 +120,7 @@ def extract_video_landmarks(
     if output_path.exists():
         raise ExtractionError(
             "An extraction result already exists for this video. "
-            "Move or rename the existing result before retrying."
+            "Delete or move the existing result before retrying."
         )
 
     capture = cv2.VideoCapture(str(source))
@@ -128,7 +140,7 @@ def extract_video_landmarks(
 
     frame_index = 0
     processed_frames = 0
-    output_created = False
+    success_completed = False
 
     try:
         with mp.solutions.holistic.Holistic(
@@ -142,11 +154,12 @@ def extract_video_landmarks(
         ) as holistic:
 
             with output_path.open("x", encoding="utf-8") as output:
-                output_created = True
-
                 metadata = {
                     "record_type": "metadata",
                     "schema_version": EXTRACTION_VERSION,
+                    "recording_id": recording_id,
+                    "label": label,
+                    "participant_id": participant_id,
                     "source_filename": source.name,
                     "fps": fps,
                     "width": width,
@@ -158,12 +171,15 @@ def extract_video_landmarks(
                     "landmarks": ["pose", "left_hand", "right_hand"],
                 }
 
-                output.write(json.dumps(metadata, allow_nan=False) + "\n")
+                output.write(
+                    json.dumps(metadata, ensure_ascii=False, allow_nan=False)
+                    + "\n"
+                )
 
                 while True:
-                    success, frame = capture.read()
+                    frame_ok, frame = capture.read()
 
-                    if not success:
+                    if not frame_ok:
                         break
 
                     current_index = frame_index
@@ -172,17 +188,24 @@ def extract_video_landmarks(
                     if current_index % frame_step != 0:
                         continue
 
-                    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    rgb_frame = cv2.cvtColor(
+                        frame,
+                        cv2.COLOR_BGR2RGB,
+                    )
                     rgb_frame.flags.writeable = False
+
                     results = holistic.process(rgb_frame)
 
                     frame_data = {
                         "record_type": "frame",
                         "frame_index": current_index,
                         "timestamp_ms": round(
-                            (current_index / fps) * 1000, 3
+                            (current_index / fps) * 1000,
+                            3,
                         ),
-                        "pose": _landmarks_to_list(results.pose_landmarks),
+                        "pose": _landmarks_to_list(
+                            results.pose_landmarks
+                        ),
                         "left_hand": _landmarks_to_list(
                             results.left_hand_landmarks
                         ),
@@ -201,14 +224,20 @@ def extract_video_landmarks(
         if processed_frames == 0:
             raise ExtractionError("No video frames could be processed.")
 
+        success_completed = True
+
         return {
+            "recording_id": recording_id,
+            "label": label,
+            "participant_id": participant_id,
             "source": source.name,
-            "output": str(output_path),
+            "output_filename": output_path.name,
             "total_frames_read": frame_index,
             "processed_frames": processed_frames,
             "fps": fps,
             "width": width,
             "height": height,
+            "schema_version": EXTRACTION_VERSION,
         }
 
     except ExtractionError:
@@ -220,9 +249,5 @@ def extract_video_landmarks(
     finally:
         capture.release()
 
-        # Do not leave an incomplete result that could be mistaken
-        # for a successful extraction.
-        if output_created and (
-            "processed_frames" not in locals() or processed_frames == 0
-        ):
+        if not success_completed:
             output_path.unlink(missing_ok=True)

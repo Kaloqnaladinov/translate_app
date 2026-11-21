@@ -11,6 +11,8 @@ Responsibilities:
 
 from __future__ import annotations
 
+from .extraction import ExtractionError, extract_video_landmarks
+
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Optional
@@ -294,7 +296,56 @@ def get_recording_file(recording_id: str):
         filename=record["original_filename"],
     )
 
+# ---------------------------------------------------------------------
+# Extract landmarks from a recording
+# ---------------------------------------------------------------------
 
+@app.post("/api/recordings/{recording_id}/extract")
+def extract_recording_landmarks(recording_id: str) -> dict:
+    """Extract MediaPipe landmarks from an existing recording."""
+
+    try:
+        record = dataset_manager.get_recording_by_id(recording_id)
+        video_path = dataset_manager.get_video_path(record)
+
+    except DatasetError as exc:
+        raise _to_http_error(exc) from exc
+
+    label = record.get("label")
+
+    if not label or label.strip().lower() == "камерен запис":
+        raise HTTPException(
+            status_code=422,
+            detail="Set a valid sign label before extracting landmarks.",
+        )
+
+    try:
+        result = extract_video_landmarks(
+            video_path=video_path,
+            recording_id=record["id"],
+            label=label,
+            participant_id=record["participant_id"],
+        )
+
+    except ExtractionError as exc:
+        message = str(exc)
+
+        if "already exists" in message:
+            raise HTTPException(
+                status_code=409,
+                detail=message,
+            ) from exc
+
+        raise HTTPException(
+            status_code=422,
+            detail=message,
+        ) from exc
+
+    return {
+        "status": "completed",
+        "message": "Landmarks extracted successfully.",
+        "result": result,
+    }
 # ---------------------------------------------------------------------
 # Create recording
 # ---------------------------------------------------------------------
