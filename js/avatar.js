@@ -150,8 +150,7 @@ function initializeScene() {
         CONFIG.cameraFar
     );
 
-    camera.position.set(0, 1.8, 7);
-
+camera.position.set(0, 2.25, 9.5);
 
     // Renderer
 
@@ -232,8 +231,7 @@ if (statusElement) {
 
         controls.dampingFactor = 0.06;
 
-        controls.target.set(0, 1.8, 0);
-
+controls.maxDistance = 15;
         controls.minDistance = 2;
 
         controls.maxDistance = 12;
