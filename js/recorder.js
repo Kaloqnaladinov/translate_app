@@ -1,53 +1,68 @@
 
 /* =========================================================
-   Translate App — recorder.js
-   Използва съществуващите елементи от kamera.html.
-   Не изисква промяна на CSS.
+   TRANSLATE APP — RECORDER.JS
+   Камера, видеозапис, смяна на камерата,
+   плаващи контроли и известия.
    Backend: FastAPI
    ========================================================= */
 
 (function () {
     'use strict';
 
-    /* ---------- Configuration ---------- */
+    /* =====================================================
+       1. CONFIGURATION
+       ===================================================== */
 
     const API_BASE_URL = 'http://127.0.0.1:8000';
 
-    /* ---------- Existing HTML elements ---------- */
+    /* =====================================================
+       2. HTML ELEMENTS
+       ===================================================== */
 
-    const personContainer = document.querySelector(
-        '.person-container'
-    );
+    const phoneScreen = document.querySelector('.phone-screen');
+    const cameraStage = document.querySelector('#camera-stage');
+    const personContainer = document.querySelector('.person-container');
 
     const headElement = personContainer?.querySelector('.head');
     const bodyElement = personContainer?.querySelector('.body');
 
     const playButton = document.querySelector('.play-btn');
     const stopButton = document.querySelector('.stop-btn');
-    const switchCameraButton = document.querySelector(
-    '#switch-camera'
-);
+
+    const switchCameraButton = document.querySelector('#switch-camera');
+
+    const controlsPanel = document.querySelector('#camera-controls');
 
     const statusElement = document.querySelector('.text-bold');
 
-    /* ---------- Camera state ---------- */
+    /* =====================================================
+       3. APPLICATION STATE
+       ===================================================== */
 
     let cameraStream = null;
+    let videoPreview = null;
+
     let currentFacingMode = 'user';
-let isSwitchingCamera = false;
+    let isSwitchingCamera = false;
+
     let mediaRecorder = null;
     let recordedChunks = [];
     let selectedMimeType = '';
-    let videoPreview = null;
+
     let shouldUpload = false;
     let pageIsClosing = false;
 
+    let toastElement = null;
+    let toastTimeout = null;
+
     const participantId = createParticipantId();
 
-    /* ---------- Helpers ---------- */
+    /* =====================================================
+       4. PARTICIPANT ID
+       ===================================================== */
 
     function createParticipantId() {
-        if (crypto.randomUUID) {
+        if (window.crypto?.randomUUID) {
             return `web-${crypto.randomUUID()}`;
         }
 
@@ -59,16 +74,88 @@ let isSwitchingCamera = false;
         );
     }
 
-    function setStatus(message) {
+    /* =====================================================
+       5. POPUP NOTIFICATIONS
+       ===================================================== */
+
+    function createToast() {
+        if (toastElement || !phoneScreen) return;
+
+        toastElement = document.createElement('div');
+
+        toastElement.className = 'camera-toast';
+        toastElement.setAttribute('role', 'status');
+        toastElement.setAttribute('aria-live', 'polite');
+
+        Object.assign(toastElement.style, {
+            position: 'absolute',
+            left: '50%',
+            top: '68px',
+            transform: 'translateX(-50%)',
+
+            width: 'max-content',
+            maxWidth: 'calc(100% - 110px)',
+
+            padding: '11px 15px',
+
+            backgroundColor: '#111',
+            color: '#fff',
+
+            border: '1px solid #555',
+            borderRadius: '12px',
+
+            fontSize: '13px',
+            fontWeight: '700',
+            lineHeight: '1.4',
+            textAlign: 'center',
+
+            boxShadow: '0 4px 15px rgba(0,0,0,0.35)',
+
+            zIndex: '50',
+            pointerEvents: 'none',
+
+            opacity: '0',
+            transition: 'opacity 0.2s ease'
+        });
+
+        phoneScreen.appendChild(toastElement);
+    }
+
+    function setStatus(message, duration = 2800) {
+        createToast();
+
         if (statusElement) {
             statusElement.textContent = message;
+
+            // Запазваме достъпно съобщението,
+            // без да го показваме върху камерата.
+            statusElement.hidden = true;
         }
+
+        if (!toastElement) return;
+
+        toastElement.textContent = message;
+        toastElement.style.opacity = '1';
+
+        if (toastTimeout) {
+            clearTimeout(toastTimeout);
+        }
+
+        toastTimeout = setTimeout(() => {
+            if (toastElement) {
+                toastElement.style.opacity = '0';
+            }
+        }, duration);
     }
+
+    /* =====================================================
+       6. SUPPORTED VIDEO FORMAT
+       ===================================================== */
 
     function getSupportedMimeType() {
         if (!window.MediaRecorder) {
             throw new Error(
-                'Браузърът не поддържа запис на видео.'
+                'Браузърът не поддържа видеозапис.'
             );
         }
 
@@ -88,6 +175,10 @@ let isSwitchingCamera = false;
         return '';
     }
 
+    /* =====================================================
+       7. RECORDING BUTTON STATES
+       ===================================================== */
+
     function setButtonStates(isRecording) {
         if (playButton) {
             playButton.disabled = isRecording;
@@ -98,7 +189,18 @@ let isSwitchingCamera = false;
         }
     }
 
-    /* ---------- Camera preview ---------- */
+    /* =====================================================
+       8. VIDEO PREVIEW
+       ===================================================== */
+
+    function updateVideoMirror() {
+        if (!videoPreview) return;
+
+        videoPreview.style.transform =
+            currentFacingMode === 'user'
+                ? 'scaleX(-1)'
+                : 'none';
+    }
 
     function createVideoPreview() {
         if (videoPreview) return;
@@ -108,26 +210,21 @@ let isSwitchingCamera = false;
         videoPreview.autoplay = true;
         videoPreview.muted = true;
         videoPreview.playsInline = true;
-        videoPreview.style.transform = 'scaleX(-1)';
+
         videoPreview.setAttribute(
             'aria-label',
             'Изображение от камерата'
         );
 
-        /*
-         * Видеото заема мястото на съществуващата
-         * графика на човечето.
-         */
         Object.assign(videoPreview.style, {
             display: 'block',
-            width: '220px',
-            height: '280px',
-            maxWidth: '100%',
+            width: '100%',
+            height: '100%',
             objectFit: 'cover',
-            borderRadius: '16px',
             backgroundColor: '#111'
-            
         });
+
+        updateVideoMirror();
 
         if (headElement) {
             headElement.hidden = true;
@@ -142,6 +239,7 @@ let isSwitchingCamera = false;
 
     function removeVideoPreview() {
         if (videoPreview) {
+            videoPreview.srcObject = null;
             videoPreview.remove();
             videoPreview = null;
         }
@@ -154,6 +252,10 @@ let isSwitchingCamera = false;
             bodyElement.hidden = false;
         }
     }
+
+    /* =====================================================
+       9. START CAMERA
+       ===================================================== */
 
     async function startCamera() {
         if (cameraStream) return;
@@ -168,87 +270,112 @@ let isSwitchingCamera = false;
             );
         }
 
-        cameraStream = await navigator.mediaDevices.getUserMedia({
-            video: {
-                facingMode: 'user',
-                width: { ideal: 1280 },
-                height: { ideal: 720 }
-            },
-            audio: false
-        });
+        const newStream =
+            await navigator.mediaDevices.getUserMedia({
+                video: {
+                    facingMode: currentFacingMode,
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                },
+                audio: false
+            });
+
+        cameraStream = newStream;
 
         createVideoPreview();
 
         videoPreview.srcObject = cameraStream;
 
+        updateVideoMirror();
+
         await videoPreview.play();
     }
 
-async function switchCamera() {
-    if (isSwitchingCamera) return;
-if (!cameraStream || !videoPreview) {
-    setStatus('Първо стартирай камерата.');
-    return;
-}
-    if (mediaRecorder?.state === 'recording') {
-        setStatus('Спри записа, преди да смениш камерата.');
-        return;
-    }
+    /* =====================================================
+       10. SWITCH FRONT / BACK CAMERA
+       ===================================================== */
 
-    isSwitchingCamera = true;
+    async function switchCamera() {
+        if (isSwitchingCamera) return;
 
-    const nextFacingMode =
-        currentFacingMode === 'user'
-            ? 'environment'
-            : 'user';
-
-    try {
-        if (!navigator.mediaDevices?.getUserMedia) {
-            throw new Error('Няма достъп до камерата.');
+        if (!cameraStream || !videoPreview) {
+            setStatus('Първо стартирай камерата.');
+            return;
         }
 
-        setStatus('Търсене на камера...');
+        if (mediaRecorder?.state === 'recording') {
+            setStatus(
+                'Спри записа, преди да смениш камерата.'
+            );
+            return;
+        }
 
-        const newStream = await navigator.mediaDevices.getUserMedia({
-            video: {
-                facingMode: { exact: nextFacingMode },
-                width: { ideal: 1280 },
-                height: { ideal: 720 }
-            },
-            audio: false
-        });
+        isSwitchingCamera = true;
 
-        const oldStream = cameraStream;
+        const nextFacingMode =
+            currentFacingMode === 'user'
+                ? 'environment'
+                : 'user';
 
-        cameraStream = newStream;
-        currentFacingMode = nextFacingMode;
+        let newStream = null;
 
-        if (videoPreview) {
+        try {
+            setStatus('Търсене на камера...');
+
+            newStream =
+                await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: {
+                            exact: nextFacingMode
+                        },
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    },
+                    audio: false
+                });
+
+            const oldStream = cameraStream;
+
+            cameraStream = newStream;
+            currentFacingMode = nextFacingMode;
+
             videoPreview.srcObject = newStream;
+
+            updateVideoMirror();
+
             await videoPreview.play();
-        }
 
-        if (oldStream) {
-            oldStream.getTracks().forEach(track => track.stop());
-        }
+            oldStream.getTracks().forEach(track => {
+                track.stop();
+            });
 
-        setStatus(
-            currentFacingMode === 'environment'
-                ? 'Задната камера е активна.'
-                : 'Предната камера е активна.'
-        );
+            setStatus(
+                currentFacingMode === 'environment'
+                    ? 'Задната камера е активна.'
+                    : 'Предната камера е активна.'
+            );
 
-    } catch (error) {
-        if (nextFacingMode === 'environment') {
-            setStatus('Не е намерена задна камера.');
-        } else {
-            setStatus('Не може да се включи предната камера.');
+        } catch (error) {
+            if (newStream) {
+                newStream.getTracks().forEach(track => {
+                    track.stop();
+                });
+            }
+
+            setStatus(
+                nextFacingMode === 'environment'
+                    ? 'Не е намерена задна камера.'
+                    : 'Не може да се включи предната камера.'
+            );
+
+        } finally {
+            isSwitchingCamera = false;
         }
-    } finally {
-        isSwitchingCamera = false;
     }
-}
 
+    /* =====================================================
+       11. STOP CAMERA
+       ===================================================== */
 
     function stopCamera() {
         if (cameraStream) {
@@ -259,18 +386,20 @@ if (!cameraStream || !videoPreview) {
             cameraStream = null;
         }
 
-        if (videoPreview) {
-            videoPreview.srcObject = null;
-        }
-
         removeVideoPreview();
     }
 
-    /* ---------- Recording ---------- */
+    /* =====================================================
+       12. START RECORDING
+       ===================================================== */
 
     async function startRecording() {
         try {
-            if (!personContainer || !playButton || !stopButton) {
+            if (
+                !personContainer ||
+                !playButton ||
+                !stopButton
+            ) {
                 throw new Error(
                     'Не са намерени необходимите HTML елементи.'
                 );
@@ -280,10 +409,6 @@ if (!cameraStream || !videoPreview) {
                 return;
             }
 
-            /*
-             * Изрично съгласие преди запис и съхранение
-             * на видео в backend.
-             */
             const consent = window.confirm(
                 'Съгласен ли си видеозаписът да бъде ' +
                 'съхранен в dataset на приложението?'
@@ -299,6 +424,7 @@ if (!cameraStream || !videoPreview) {
             await startCamera();
 
             recordedChunks = [];
+
             shouldUpload = true;
             pageIsClosing = false;
 
@@ -316,7 +442,10 @@ if (!cameraStream || !videoPreview) {
             mediaRecorder.addEventListener(
                 'dataavailable',
                 event => {
-                    if (event.data && event.data.size > 0) {
+                    if (
+                        event.data &&
+                        event.data.size > 0
+                    ) {
                         recordedChunks.push(event.data);
                     }
                 }
@@ -329,7 +458,10 @@ if (!cameraStream || !videoPreview) {
 
                     setStatus(
                         'Грешка при запис: ' +
-                        (event.error?.message || 'неизвестна грешка')
+                        (
+                            event.error?.message ||
+                            'неизвестна грешка'
+                        )
                     );
 
                     setButtonStates(false);
@@ -359,6 +491,10 @@ if (!cameraStream || !videoPreview) {
         }
     }
 
+    /* =====================================================
+       13. STOP RECORDING
+       ===================================================== */
+
     function stopRecording() {
         if (
             !mediaRecorder ||
@@ -369,17 +505,23 @@ if (!cameraStream || !videoPreview) {
 
         setStatus('Записът приключва...');
 
-        stopButton.disabled = true;
+        if (stopButton) {
+            stopButton.disabled = true;
+        }
 
         mediaRecorder.stop();
     }
 
-    /* ---------- Upload to Python backend ---------- */
+    /* =====================================================
+       14. UPLOAD TO FASTAPI
+       ===================================================== */
 
     async function uploadRecording() {
         try {
             if (!recordedChunks.length) {
-                throw new Error('Няма записани видео данни.');
+                throw new Error(
+                    'Няма записани видео данни.'
+                );
             }
 
             const mimeType =
@@ -396,7 +538,9 @@ if (!cameraStream || !videoPreview) {
             });
 
             if (videoBlob.size === 0) {
-                throw new Error('Видео файлът е празен.');
+                throw new Error(
+                    'Видео файлът е празен.'
+                );
             }
 
             const formData = new FormData();
@@ -429,7 +573,9 @@ if (!cameraStream || !videoPreview) {
                 }
             );
 
-            const result = await response.json().catch(() => ({}));
+            const result = await response
+                .json()
+                .catch(() => ({}));
 
             if (!response.ok) {
                 throw new Error(
@@ -446,12 +592,257 @@ if (!cameraStream || !videoPreview) {
 
         } catch (error) {
             setStatus(
-                `Грешка при качване: ${error.message}`
+                `Грешка при качване: ${error.message}`,
+                4500
             );
         }
     }
 
-    /* ---------- Events ---------- */
+    /* =====================================================
+       15. FLOATING PANEL — DRAG AND SNAP
+       ===================================================== */
+
+    let dragState = null;
+    let suppressNextClick = false;
+
+    function clamp(value, min, max) {
+        return Math.min(
+            Math.max(value, min),
+            Math.max(min, max)
+        );
+    }
+
+    function movePanelTo(left, top) {
+        if (!controlsPanel || !phoneScreen) return;
+
+        const maxLeft =
+            phoneScreen.clientWidth -
+            controlsPanel.offsetWidth;
+
+        const maxTop =
+            phoneScreen.clientHeight -
+            controlsPanel.offsetHeight;
+
+        const safeLeft = clamp(left, 0, maxLeft);
+        const safeTop = clamp(top, 0, maxTop);
+
+        controlsPanel.style.left = `${safeLeft}px`;
+        controlsPanel.style.top = `${safeTop}px`;
+
+        controlsPanel.style.right = 'auto';
+        controlsPanel.style.bottom = 'auto';
+    }
+
+    function snapPanelToNearestEdge() {
+        if (!controlsPanel || !phoneScreen) return;
+
+        const panelRect =
+            controlsPanel.getBoundingClientRect();
+
+        const phoneRect =
+            phoneScreen.getBoundingClientRect();
+
+        const panelWidth = controlsPanel.offsetWidth;
+        const panelHeight = controlsPanel.offsetHeight;
+
+        const phoneWidth = phoneScreen.clientWidth;
+        const phoneHeight = phoneScreen.clientHeight;
+
+        const currentLeft =
+            panelRect.left -
+            phoneRect.left -
+            phoneScreen.clientLeft;
+
+        const currentTop =
+            panelRect.top -
+            phoneRect.top -
+            phoneScreen.clientTop;
+
+        const distances = {
+            top: currentTop,
+            right: phoneWidth - currentLeft - panelWidth,
+            bottom: phoneHeight - currentTop - panelHeight,
+            left: currentLeft
+        };
+
+        const nearestEdge = Object.keys(distances).reduce(
+            (nearest, edge) =>
+                distances[edge] < distances[nearest]
+                    ? edge
+                    : nearest,
+            'top'
+        );
+
+        let finalLeft = currentLeft;
+        let finalTop = currentTop;
+
+        switch (nearestEdge) {
+            case 'top':
+                finalTop = 0;
+                break;
+
+            case 'bottom':
+                finalTop = phoneHeight - panelHeight;
+                break;
+
+            case 'left':
+                finalLeft = 0;
+                break;
+
+            case 'right':
+                finalLeft = phoneWidth - panelWidth;
+                break;
+        }
+
+        movePanelTo(finalLeft, finalTop);
+    }
+
+    function startPanelDrag(event) {
+        if (!controlsPanel || !phoneScreen) return;
+
+        if (event.button !== undefined && event.button !== 0) {
+            return;
+        }
+
+        if (event.target.closest('button')) {
+            // Бутоните запазват нормалното си действие.
+            return;
+        }
+
+        const panelRect =
+            controlsPanel.getBoundingClientRect();
+
+        const phoneRect =
+            phoneScreen.getBoundingClientRect();
+
+        dragState = {
+            pointerId: event.pointerId,
+
+            startX: event.clientX,
+            startY: event.clientY,
+
+            startLeft:
+                panelRect.left -
+                phoneRect.left -
+                phoneScreen.clientLeft,
+
+            startTop:
+                panelRect.top -
+                phoneRect.top -
+                phoneScreen.clientTop,
+
+            moved: false
+        };
+
+        controlsPanel.setPointerCapture(event.pointerId);
+
+        event.preventDefault();
+    }
+
+    function movePanelDrag(event) {
+        if (
+            !dragState ||
+            event.pointerId !== dragState.pointerId
+        ) {
+            return;
+        }
+
+        const deltaX = event.clientX - dragState.startX;
+        const deltaY = event.clientY - dragState.startY;
+
+        if (
+            Math.abs(deltaX) > 5 ||
+            Math.abs(deltaY) > 5
+        ) {
+            dragState.moved = true;
+        }
+
+        movePanelTo(
+            dragState.startLeft + deltaX,
+            dragState.startTop + deltaY
+        );
+    }
+
+    function finishPanelDrag(event) {
+        if (
+            !dragState ||
+            event.pointerId !== dragState.pointerId
+        ) {
+            return;
+        }
+
+        const wasMoved = dragState.moved;
+
+        dragState = null;
+
+        if (wasMoved) {
+            suppressNextClick = true;
+
+            // Не допускаваме влаченето да задейства бутон.
+            setTimeout(() => {
+                suppressNextClick = false;
+            }, 250);
+
+            snapPanelToNearestEdge();
+        }
+    }
+
+    function preventClickAfterDrag(event) {
+        if (!suppressNextClick) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+
+        suppressNextClick = false;
+    }
+
+    function initializeFloatingPanel() {
+        if (!controlsPanel) return;
+
+        controlsPanel.addEventListener(
+            'pointerdown',
+            startPanelDrag
+        );
+
+        controlsPanel.addEventListener(
+            'pointermove',
+            movePanelDrag
+        );
+
+        controlsPanel.addEventListener(
+            'pointerup',
+            finishPanelDrag
+        );
+
+        controlsPanel.addEventListener(
+            'pointercancel',
+            finishPanelDrag
+        );
+
+        controlsPanel.addEventListener(
+            'click',
+            preventClickAfterDrag,
+            true
+        );
+
+        window.addEventListener('resize', () => {
+            if (!controlsPanel.style.left) return;
+
+            const currentLeft =
+                parseFloat(controlsPanel.style.left) || 0;
+
+            const currentTop =
+                parseFloat(controlsPanel.style.top) || 0;
+
+            movePanelTo(currentLeft, currentTop);
+            snapPanelToNearestEdge();
+        });
+    }
+
+    /* =====================================================
+       16. EVENT LISTENERS
+       ===================================================== */
 
     if (playButton) {
         playButton.addEventListener(
@@ -466,22 +857,30 @@ if (!cameraStream || !videoPreview) {
             stopRecording
         );
     }
-    if (switchCameraButton) {
-    switchCameraButton.addEventListener(
-        'click',
-        switchCamera
-    );
 
-    switchCameraButton.addEventListener(
-        'keydown',
-        event => {
-            if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault();
-                switchCamera();
+    if (switchCameraButton) {
+        switchCameraButton.addEventListener(
+            'click',
+            switchCamera
+        );
+
+        switchCameraButton.addEventListener(
+            'keydown',
+            event => {
+                if (
+                    event.key === 'Enter' ||
+                    event.key === ' '
+                ) {
+                    event.preventDefault();
+                    switchCamera();
+                }
             }
-        }
-    );
-}
+        );
+    }
+
+    /* =====================================================
+       17. PAGE CLEANUP
+       ===================================================== */
 
     window.addEventListener('pagehide', () => {
         pageIsClosing = true;
@@ -494,10 +893,20 @@ if (!cameraStream || !videoPreview) {
         stopCamera();
     });
 
-    /* ---------- Initial state ---------- */
+    /* =====================================================
+       18. INITIALIZATION
+       ===================================================== */
 
     setButtonStates(false);
 
-    setStatus('Натисни бутона за старт, за да включиш камерата.');
+    if (statusElement) {
+        statusElement.hidden = true;
+    }
+
+    initializeFloatingPanel();
+
+    setStatus(
+        'Натисни бутона за старт, за да включиш камерата.'
+    );
 
 })();
