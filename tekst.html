@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="bg">
 <head>
@@ -57,35 +58,43 @@
         </section>
 
         <nav class="floating-nav" aria-label="Навигация">
+
             <button
                 type="button"
                 onclick="window.location.href='index.html'"
                 aria-label="Главно меню">
+
                 <img src="assets/images/blackbar.png" alt="">
+
             </button>
 
             <button
                 type="button"
                 onclick="window.location.href='kamera.html'"
                 aria-label="Към камерата">
+
                 <img src="assets/images/blackarrow.png" alt="">
+
             </button>
+
         </nav>
+
+        <!-- 3D AVATAR VIEWPORT -->
 
         <section class="screen-gray-bg avatar-stage">
 
             <div
                 id="avatarContainer"
                 class="avatar-container"
-                aria-label="Място за 3D аватар">
+                aria-label="3D аватар за изпълнение на жестове">
 
-                <div class="person-container" aria-hidden="true">
-                    <div class="head"></div>
-                    <div class="body"></div>
-                </div>
+                <!-- Three.js ще създаде 3D сцената тук -->
 
-                <p id="avatarStatus">
-                    3D аватарът ще бъде показан тук.
+                <p
+                    id="avatarStatus"
+                    role="status"
+                    aria-live="polite">
+                    Подготвяне на 3D аватара...
                 </p>
 
             </div>
@@ -93,6 +102,14 @@
         </section>
 
     </main>
-     <script src="js/spelling.js" defer></script>
+
+    <!-- Управление на текст -->
+
+    <script src="js/spelling.js" defer></script>
+
+    <!-- Универсална 3D система за жестове -->
+
+    <script type="module" src="js/avatar.js"></script>
+
 </body>
 </html>
