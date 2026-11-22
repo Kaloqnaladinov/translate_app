@@ -1,55 +1,85 @@
+
 <!DOCTYPE html>
 <html lang="bg">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Прототип на приложение - Версия 2</title>
-    <!-- Добавяме библиотека за икони -->
+
     <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="css/animation.css">
-<script src="js/recorder.js" defer></script>
 
-    </head>
-    <body>
-        <div class="phone-screen">
-            <div class="header-black">
-                <div class="menu-text">
-                    <i class="fas fa-bars"><button onclick="document.location='index.html'"><img src="assets/images/whitebar.png" alt=""></button></i> 
-                </div>
-                <div class="icons">
-<i
-    class="fas fa-recycle"
-    id="switch-camera"
-    role="button"
-    tabindex="0"
-    aria-label="Смени камерата"
-    title="Смени камерата"
->
-    <img src="assets/images/whitearrowC.png" alt="Смени камерата">
-</i>
-                    <i class="fas fa-sync-alt" onclick="document.location='tekst.html'"><img src="assets/images/whitearrow.png" alt=""></i>
-                </div>
+    <script src="js/recorder.js" defer></script>
+</head>
+<body>
+    <div class="phone-screen">
+
+        <div class="header-black">
+            <div class="menu-text">
+                <i class="fas fa-bars">
+                    <button type="button" onclick="document.location='index.html'">
+                        <img src="assets/images/whitebar.png" alt="Меню">
+                    </button>
+                </i>
             </div>
-            <div class="action-buttons">
-                <button class="control-btn play-btn">
-                    <div class="play-triangle"></div>
-                </button>
-                <button class="control-btn stop-btn">
-                    <div class="stop-square"></div>
-                </button>
-            </div>
-            <div class="screen-gray-bg">
-                <div class="person-container">
-                    <div class="head"></div>
-                    <div class="body"></div>
-                </div>
-                <div class="text-bold">
-                    kamerata koqto<br>gleda choveka
-                </div>
-            </div>
-            <div class="footer-black">
-                prazno mqsto
+
+            <div class="icons">
+                <i
+                    class="fas fa-recycle"
+                    id="switch-camera"
+                    role="button"
+                    tabindex="0"
+                    aria-label="Смени камерата"
+                    title="Смени камерата"
+                >
+                    <img src="assets/images/whitearrowC.png" alt="Смени камерата">
+                </i>
+
+                <i
+                    class="fas fa-sync-alt"
+                    onclick="document.location='tekst.html'"
+                >
+                    <img src="assets/images/whitearrow.png" alt="Към текстовия екран">
+                </i>
             </div>
         </div>
-    </body>
+
+        <div
+            class="action-buttons"
+            id="camera-controls"
+            role="group"
+            aria-label="Управление на камерата"
+        >
+            <button
+                type="button"
+                class="control-btn play-btn"
+                aria-label="Старт на записа"
+                title="Старт"
+            >
+                <div class="play-triangle"></div>
+            </button>
+
+            <button
+                type="button"
+                class="control-btn stop-btn"
+                aria-label="Стоп на записа"
+                title="Стоп"
+            >
+                <div class="stop-square"></div>
+            </button>
+        </div>
+
+        <div class="screen-gray-bg" id="camera-stage">
+            <div class="person-container">
+                <div class="head"></div>
+                <div class="body"></div>
+            </div>
+
+            <div class="text-bold" role="status" aria-live="polite">
+                Натисни бутона за старт, за да включиш камерата.
+            </div>
+        </div>
+
+    </div>
+</body>
 </html>
