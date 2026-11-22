@@ -1,6 +1,24 @@
 
-
 {
   "letters": {},
-  "words": {}
+  "words": {
+    "1": {
+      "clip": "Cheer"
+    },
+    "2": {
+      "clip": "Phone call"
+    },
+    "3": {
+      "clip": "Wave"
+    },
+    "4": {
+      "clip": "Laugh"
+    },
+    "5": {
+      "clip": "Clap"
+    },
+    "6": {
+      "clip": "Point"
+    }
+  }
 }

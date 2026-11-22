@@ -629,14 +629,13 @@ async function loadExternalAnimation(path) {
 // PLAY ANIMATION CLIP
 // ---------------------------------------------------------
 
-function playClip(clip) {
+
+function playClip(clip, validateCompatibility = true) {
     if (!mixer || !avatar) {
-        throw new Error(
-            "3D аватарът не е готов."
-        );
+        throw new Error("3D аватарът не е готов.");
     }
 
-    if (!isClipCompatible(clip)) {
+    if (validateCompatibility && !isClipCompatible(clip)) {
         throw new Error(
             `Анимацията "${clip.name || "без име"}" няма съвместими tracks с рига на аватара.`
         );
@@ -645,11 +644,8 @@ function playClip(clip) {
     const nextAction = mixer.clipAction(clip);
 
     nextAction.reset();
-
     nextAction.setLoop(THREE.LoopOnce, 1);
-
     nextAction.clampWhenFinished = true;
-
     nextAction.fadeIn(CONFIG.animationFade);
 
     if (currentAction && currentAction !== nextAction) {
@@ -657,7 +653,6 @@ function playClip(clip) {
     }
 
     nextAction.play();
-
     currentAction = nextAction;
 
     return nextAction;
@@ -691,9 +686,8 @@ async function playSign(sign) {
             );
         }
 
-        playClip(clip);
-
-        return true;
+        return playClip(clip, false);
+        
     }
 
 
@@ -720,9 +714,7 @@ async function playSign(sign) {
             );
         }
 
-        playClip(clip);
-
-        return true;
+        return playClip(clip, true);
     }
 
 
@@ -792,30 +784,18 @@ async function playText(text) {
                     `Подготовка на жеста: ${sign.key}`
                 );
 
-                await playSign(sign);
+                const action = await playSign(sign);
 
-                played++;
+played++;
 
-                // Изчакваме текущата анимация да приключи.
-                // Продължителността се взема от самия clip.
-                const config = getAnimationConfig(sign);
+const duration = action.getClip().duration * 1000;
 
-                let duration = 1000;
-
-                if (config && config.animation) {
-                    duration = 1000;
-                }
-
-                if (config && config.duration) {
-                    duration = Number(config.duration);
-                }
-
-                await new Promise(resolve => {
-                    setTimeout(
-                        resolve,
-                        Math.max(duration, 100)
-                    );
-                });
+await new Promise(resolve => {
+    setTimeout(
+        resolve,
+        Math.max(duration, 100)
+    );
+});
 
             } catch (error) {
                 console.error(
