@@ -2,19 +2,14 @@
 /*
  * TRANSLATE APP — UNIVERSAL 3D AVATAR
  *
- * Основни функции:
- * 1. Зарежда базовия GLB модел.
- * 2. Зарежда каталога data/signs.json.
- * 3. Поддържа анимации от базовия модел.
- * 4. Поддържа отделни GLB файлове с анимации.
- * 5. Предоставя публичен API: window.TranslateAvatar.play(text).
- *
- * Не стартира жест, ако не е намерена валидна анимация.
+ * Поддържа:
+ * 1. Вградените GLB анимации.
+ * 2. Външни GLB анимации.
+ * 3. Речник с думи и цели фрази.
+ * 4. Най-дълго съвпадение (Longest Match).
+ * 5. Последователно изпълнение на жестовете.
+ * 6. Публичен API: window.TranslateAvatar.play(text).
  */
-
-// ---------------------------------------------------------
-// THREE.JS IMPORTS
-// ---------------------------------------------------------
 
 import * as THREE from
     "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js";
@@ -46,8 +41,6 @@ const CONFIG = {
 
     enableControls: true,
 
-    // Максимален брой последователни опити за зареждане
-    // на анимации в една заявка.
     maxAnimationQueue: 100
 };
 
@@ -106,7 +99,6 @@ function setStatus(message) {
 
 function showError(message, error = null) {
     console.error("[TranslateAvatar]", message, error || "");
-
     setStatus(message);
 }
 
@@ -150,11 +142,8 @@ function initializeScene() {
         CONFIG.cameraFar
     );
 
-// По-близък кадър, насочен към горната част на тялото.
-camera.position.set(0, 2.85, 7.2);
-camera.lookAt(0, 2.85, 0);
-
-    // Renderer
+    camera.position.set(0, 2.85, 7.2);
+    camera.lookAt(0, 2.85, 0);
 
     renderer = new THREE.WebGLRenderer({
         antialias: true,
@@ -166,9 +155,7 @@ camera.lookAt(0, 2.85, 0);
     );
 
     renderer.outputColorSpace = THREE.SRGBColorSpace;
-
     renderer.shadowMap.enabled = true;
-
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     renderer.domElement.style.position = "absolute";
@@ -180,15 +167,14 @@ camera.lookAt(0, 2.85, 0);
 
     container.style.position = "relative";
     container.style.overflow = "hidden";
-if (statusElement) {
-    statusElement.style.position = "relative";
-    statusElement.style.zIndex = "1";
-    statusElement.style.pointerEvents = "none";
-}
+
+    if (statusElement) {
+        statusElement.style.position = "relative";
+        statusElement.style.zIndex = "1";
+        statusElement.style.pointerEvents = "none";
+    }
+
     container.appendChild(renderer.domElement);
-
-
-    // Осветление
 
     const ambientLight = new THREE.HemisphereLight(
         0xffffff,
@@ -198,18 +184,15 @@ if (statusElement) {
 
     scene.add(ambientLight);
 
-
     const mainLight = new THREE.DirectionalLight(
         0xffffff,
         2.5
     );
 
     mainLight.position.set(4, 7, 6);
-
     mainLight.castShadow = true;
 
     scene.add(mainLight);
-
 
     const fillLight = new THREE.DirectionalLight(
         0xffffff,
@@ -220,31 +203,23 @@ if (statusElement) {
 
     scene.add(fillLight);
 
-
-    // Контроли за завъртане на модела
-
     if (CONFIG.enableControls) {
         controls = new OrbitControls(
             camera,
             renderer.domElement
         );
 
-       controls.enableDamping = true;
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.06;
 
-controls.dampingFactor = 0.06;
+        controls.minDistance = 2;
+        controls.maxDistance = 12;
 
-controls.minDistance = 2;
-controls.maxDistance = 12;
+        controls.target.set(0, 2.85, 0);
+        controls.maxPolarAngle = Math.PI * 0.85;
 
-controls.target.set(0, 2.85, 0);
-
-controls.maxPolarAngle = Math.PI * 0.85;
-
-controls.update();
+        controls.update();
     }
-
-
-    // Размери
 
     updateRendererSize();
 
@@ -253,9 +228,6 @@ controls.update();
     });
 
     resizeObserver.observe(container);
-
-
-    // Стартиране на рендер цикъла
 
     animate();
 
@@ -294,6 +266,8 @@ function updateRendererSize() {
 // RENDER LOOP
 // ---------------------------------------------------------
 
+const clock = new THREE.Clock();
+
 function animate() {
     animationFrameId = requestAnimationFrame(animate);
 
@@ -314,8 +288,6 @@ function animate() {
         renderer.render(scene, camera);
     }
 }
-
-const clock = new THREE.Clock();
 
 
 // ---------------------------------------------------------
@@ -339,13 +311,9 @@ async function loadAvatarModel() {
         );
     }
 
-
-    // Сенки и материали
-
     avatar.traverse((object) => {
         if (object.isMesh) {
             object.castShadow = true;
-
             object.receiveShadow = true;
 
             if (object.material) {
@@ -354,21 +322,15 @@ async function loadAvatarModel() {
         }
     });
 
-
-    // Центриране на модела
-
     const initialBox = new THREE.Box3().setFromObject(
         avatar
     );
 
     const initialSize = new THREE.Vector3();
-
     const initialCenter = new THREE.Vector3();
 
     initialBox.getSize(initialSize);
-
     initialBox.getCenter(initialCenter);
-
 
     if (initialSize.y <= 0) {
         throw new Error(
@@ -376,15 +338,11 @@ async function loadAvatarModel() {
         );
     }
 
-
     avatar.position.sub(initialCenter);
 
     const scale = CONFIG.modelHeight / initialSize.y;
 
     avatar.scale.setScalar(scale);
-
-
-    // Поставяне на пода
 
     const scaledBox = new THREE.Box3().setFromObject(
         avatar
@@ -392,16 +350,9 @@ async function loadAvatarModel() {
 
     avatar.position.y -= scaledBox.min.y;
 
-
     scene.add(avatar);
 
-
-    // AnimationMixer
-
     mixer = new THREE.AnimationMixer(avatar);
-
-
-    // Вградени анимации
 
     const embeddedAnimations = gltf.animations || [];
 
@@ -410,7 +361,6 @@ async function loadAvatarModel() {
         embeddedAnimations.map(animation => animation.name)
     );
 
-
     isModelLoaded = true;
 
     setStatus(
@@ -418,7 +368,6 @@ async function loadAvatarModel() {
             ? `Аватарът е зареден. Открити анимации: ${embeddedAnimations.length}.`
             : "Аватарът е зареден. Все още няма открити анимации."
     );
-
 
     return embeddedAnimations;
 }
@@ -469,25 +418,27 @@ async function loadManifest() {
 
 
 // ---------------------------------------------------------
-// FIND SIGN IN MANIFEST
+// TEXT NORMALIZATION
 // ---------------------------------------------------------
 
 function normalizeText(value) {
     return String(value)
         .normalize("NFC")
         .trim()
-        .toLocaleLowerCase("bg-BG");
+        .toLocaleLowerCase("bg-BG")
+        .replace(/\s+/g, " ");
 }
 
+
+// ---------------------------------------------------------
+// FIND SIGN IN MANIFEST
+// ---------------------------------------------------------
 
 function findSign(token) {
     const normalized = normalizeText(token);
 
     const words = manifest.words || {};
-
     const letters = manifest.letters || {};
-
-    // Първо търсим цяла дума.
 
     for (const [key, value] of Object.entries(words)) {
         if (normalizeText(key) === normalized) {
@@ -498,8 +449,6 @@ function findSign(token) {
             };
         }
     }
-
-    // След това търсим отделна буква.
 
     for (const [key, value] of Object.entries(letters)) {
         if (normalizeText(key) === normalized) {
@@ -512,6 +461,82 @@ function findSign(token) {
     }
 
     return null;
+}
+
+
+// ---------------------------------------------------------
+// LONGEST MATCH TOKENIZER
+// ---------------------------------------------------------
+
+function tokenizeText(text) {
+    const normalized = normalizeText(text);
+
+    if (!normalized) {
+        return [];
+    }
+
+    const words = manifest.words || {};
+    const letters = manifest.letters || {};
+
+    // Събираме всички ключове от речника.
+    const dictionaryKeys = [
+        ...Object.keys(words),
+        ...Object.keys(letters)
+    ]
+        .map(key => normalizeText(key))
+        .filter(Boolean);
+
+    // Премахваме дублираните ключове.
+    const uniqueKeys = [...new Set(dictionaryKeys)];
+
+    // Сортираме от най-дългата фраза към най-късата.
+    uniqueKeys.sort((a, b) => {
+        const wordDifference =
+            b.split(" ").length - a.split(" ").length;
+
+        return wordDifference || b.length - a.length;
+    });
+
+    const tokens = normalized.split(/\s+/);
+
+    const result = [];
+
+    let index = 0;
+
+    while (index < tokens.length) {
+        let matchedKey = null;
+
+        // Търсим най-дългото съвпадение от текущата позиция.
+        for (const key of uniqueKeys) {
+            const keyTokens = key.split(/\s+/);
+
+            const candidate = tokens
+                .slice(index, index + keyTokens.length)
+                .join(" ");
+
+            if (
+                candidate === key &&
+                keyTokens.length <= tokens.length - index
+            ) {
+                matchedKey = key;
+                break;
+            }
+        }
+
+        if (matchedKey) {
+            result.push(matchedKey);
+
+            index += matchedKey.split(/\s+/).length;
+        } else {
+            // Ако няма дума или фраза, оставяме
+            // отделния токен за търсене на буква.
+            result.push(tokens[index]);
+
+            index++;
+        }
+    }
+
+    return result;
 }
 
 
@@ -587,9 +612,6 @@ function findEmbeddedClip(clipName) {
         return null;
     }
 
-    // Търсим анимации, заредени от основния GLB.
-    // Те ще бъдат добавени към този списък при зареждането.
-
     const clips = avatar.userData.embeddedAnimations || [];
 
     if (!clipName) {
@@ -631,7 +653,6 @@ async function loadExternalAnimation(path) {
 // PLAY ANIMATION CLIP
 // ---------------------------------------------------------
 
-
 function playClip(clip, validateCompatibility = true) {
     if (!mixer || !avatar) {
         throw new Error("3D аватарът не е готов.");
@@ -655,6 +676,7 @@ function playClip(clip, validateCompatibility = true) {
     }
 
     nextAction.play();
+
     currentAction = nextAction;
 
     return nextAction;
@@ -674,9 +696,6 @@ async function playSign(sign) {
         );
     }
 
-
-    // Вариант 1: анимация от базовия GLB.
-
     if (animationConfig.clip && !animationConfig.animation) {
         const clip = findEmbeddedClip(
             animationConfig.clip
@@ -689,11 +708,7 @@ async function playSign(sign) {
         }
 
         return playClip(clip, false);
-        
     }
-
-
-    // Вариант 2: отделен GLB файл.
 
     if (animationConfig.animation) {
         const clips = await loadExternalAnimation(
@@ -718,7 +733,6 @@ async function playSign(sign) {
 
         return playClip(clip, true);
     }
-
 
     throw new Error(
         `За "${sign.key}" няма зададен animation или clip.`
@@ -751,9 +765,8 @@ async function playText(text) {
         };
     }
 
-    const tokens = input
-        .split(/\s+/)
-        .filter(Boolean);
+    // Ново: разделяме текста чрез Longest Match.
+    const tokens = tokenizeText(input);
 
     if (tokens.length > CONFIG.maxAnimationQueue) {
         setStatus("Текстът е прекалено дълъг.");
@@ -764,8 +777,10 @@ async function playText(text) {
         };
     }
 
-
-    // Изпълнението се подрежда в последователна опашка.
+    console.info(
+        "[TranslateAvatar] Разпозната последователност:",
+        tokens
+    );
 
     const task = async () => {
         let played = 0;
@@ -788,16 +803,17 @@ async function playText(text) {
 
                 const action = await playSign(sign);
 
-played++;
+                played++;
 
-const duration = action.getClip().duration * 1000;
+                const duration =
+                    action.getClip().duration * 1000;
 
-await new Promise(resolve => {
-    setTimeout(
-        resolve,
-        Math.max(duration, 100)
-    );
-});
+                await new Promise(resolve => {
+                    setTimeout(
+                        resolve,
+                        Math.max(duration, 100)
+                    );
+                });
 
             } catch (error) {
                 console.error(
@@ -823,10 +839,10 @@ await new Promise(resolve => {
 
         return {
             success: played > 0,
-            played
+            played,
+            tokens
         };
     };
-
 
     animationQueue = animationQueue.then(
         task,
@@ -869,7 +885,10 @@ window.TranslateAvatar = {
                 currentAction && currentAction.isRunning()
             )
         };
-    }
+    },
+
+    // Позволява проверка на разделянето на фразите.
+    tokenize: tokenizeText
 };
 
 
@@ -887,7 +906,6 @@ async function startAvatar() {
 
         const embeddedAnimations = await loadAvatarModel();
 
-        // Запазваме вградените анимации за бъдещо търсене.
         avatar.userData.embeddedAnimations = embeddedAnimations;
 
         await loadManifest();
