@@ -186,7 +186,10 @@ let isSwitchingCamera = false;
 
 async function switchCamera() {
     if (isSwitchingCamera) return;
-
+if (!cameraStream || !videoPreview) {
+    setStatus('Първо стартирай камерата.');
+    return;
+}
     if (mediaRecorder?.state === 'recording') {
         setStatus('Спри записа, преди да смениш камерата.');
         return;
