@@ -90,11 +90,11 @@
         Object.assign(toastElement.style, {
             position: 'absolute',
             left: '50%',
-top: '50%',
-transform: 'translate(-50%, -50%)',
+            top: '50%',
+            transform: 'translate(-50%, -50%)',
 
-width: 'max-content',
-maxWidth: 'calc(100% - 40px)',
+            width: 'max-content',
+            maxWidth: 'calc(100% - 40px)',
 
             padding: '11px 15px',
 
@@ -121,20 +121,20 @@ maxWidth: 'calc(100% - 40px)',
         phoneScreen.appendChild(toastElement);
     }
 
-    function setStatus(message, duration = 2800) {
+    function setStatus(message, duration = 2800, isError = false) {
+        // Не показваме обичайните статуси на тестерите.
+        if (!isError) return;
+
         createToast();
 
         if (statusElement) {
-            statusElement.textContent = message;
-
-            // Запазваме достъпно съобщението,
-            // без да го показваме върху камерата.
+            statusElement.textContent = 'Не можа да се запише.';
             statusElement.hidden = true;
         }
 
         if (!toastElement) return;
 
-        toastElement.textContent = message;
+        toastElement.textContent = 'Не можа да се запише.';
         toastElement.style.opacity = '1';
 
         if (toastTimeout) {
@@ -362,11 +362,7 @@ maxWidth: 'calc(100% - 40px)',
                 });
             }
 
-            setStatus(
-                nextFacingMode === 'environment'
-                    ? 'Не е намерена задна камера.'
-                    : 'Не може да се включи предната камера.'
-            );
+            setStatus('Не можа да се запише.', 4500, true);
 
         } finally {
             isSwitchingCamera = false;
@@ -456,13 +452,7 @@ maxWidth: 'calc(100% - 40px)',
                 event => {
                     shouldUpload = false;
 
-                    setStatus(
-                        'Грешка при запис: ' +
-                        (
-                            event.error?.message ||
-                            'неизвестна грешка'
-                        )
-                    );
+                    setStatus('Не можа да се запише.', 4500, true);
 
                     setButtonStates(false);
                 }
@@ -486,7 +476,7 @@ maxWidth: 'calc(100% - 40px)',
             setStatus('Камерата е активна. Записът започна.');
 
         } catch (error) {
-            setStatus(error.message);
+            setStatus('Не можа да се запише.', 4500, true);
             setButtonStates(false);
         }
     }
@@ -591,10 +581,7 @@ maxWidth: 'calc(100% - 40px)',
             );
 
         } catch (error) {
-            setStatus(
-                `Грешка при качване: ${error.message}`,
-                4500
-            );
+            setStatus('Не можа да се запише.', 4500, true);
         }
     }
 
