@@ -1,8 +1,7 @@
 
-
 /* =========================================================
    Translate App — spelling.js
-   Диктовка, прочитане и управление на текст.
+   Диктовка, прочитане, превод чрез 3D аватар.
    Език: Български (bg-BG)
    ========================================================= */
 
@@ -12,6 +11,7 @@
     const textInput = document.getElementById('textInput');
     const dictationButton = document.getElementById('dictationButton');
     const speakButton = document.getElementById('speakButton');
+    const translateButton = document.getElementById('translateButton');
     const clearButton = document.getElementById('clearTextButton');
     const statusElement = document.getElementById('textStatus');
 
@@ -19,9 +19,11 @@
         !textInput ||
         !dictationButton ||
         !speakButton ||
+        !translateButton ||
         !clearButton ||
         !statusElement
     ) {
+        console.error('Липсва необходим HTML елемент.');
         return;
     }
 
@@ -38,7 +40,7 @@
     }
 
     // -----------------------------------------------------
-    // Dictation
+    // DICTATION
     // -----------------------------------------------------
 
     if (SpeechRecognition) {
@@ -95,15 +97,11 @@
         recognition.onerror = function (event) {
             if (event.error === 'not-allowed') {
                 shouldRestart = false;
-                setStatus(
-                    'Няма разрешение за използване на микрофона.'
-                );
+                setStatus('Няма разрешение за микрофона.');
             } else if (event.error === 'no-speech') {
-                setStatus('Не беше разпозната реч. Опитай отново.');
+                setStatus('Не беше разпозната реч.');
             } else if (event.error !== 'aborted') {
-                setStatus(
-                    'Грешка при диктовката: ' + event.error
-                );
+                setStatus('Грешка при диктовката: ' + event.error);
             }
         };
 
@@ -135,23 +133,18 @@
                 recognition.start();
             } catch (error) {
                 shouldRestart = false;
-                setStatus(
-                    'Не може да се стартира диктовката. Опитай отново.'
-                );
+                setStatus('Не може да се стартира диктовката.');
             }
         });
 
     } else {
         dictationButton.addEventListener('click', function () {
-            setStatus(
-                'Този браузър не поддържа диктовка. ' +
-                'Опитай с Google Chrome.'
-            );
+            setStatus('Браузърът не поддържа диктовка. Използвай Chrome.');
         });
     }
 
     // -----------------------------------------------------
-    // Read text aloud
+    // READ TEXT ALOUD
     // -----------------------------------------------------
 
     speakButton.addEventListener('click', function () {
@@ -164,9 +157,7 @@
         }
 
         if (!('speechSynthesis' in window)) {
-            setStatus(
-                'Този браузър не поддържа прочитане на текст.'
-            );
+            setStatus('Браузърът не поддържа прочитане на текст.');
             return;
         }
 
@@ -188,14 +179,61 @@
         };
 
         utterance.onerror = function () {
-            setStatus('Възникна грешка при прочитането.');
+            setStatus('Грешка при прочитането.');
         };
 
         window.speechSynthesis.speak(utterance);
     });
 
     // -----------------------------------------------------
-    // Clear text
+    // TRANSLATE WITH 3D AVATAR
+    // -----------------------------------------------------
+
+    translateButton.addEventListener('click', async function () {
+        const text = textInput.value.trim();
+
+        if (!text) {
+            setStatus('Първо въведи текст за превод.');
+            textInput.focus();
+            return;
+        }
+
+        if (
+            !window.TranslateAvatar ||
+            typeof window.TranslateAvatar.play !== 'function'
+        ) {
+            setStatus('3D аватарът все още се зарежда. Опитай отново.');
+            return;
+        }
+
+        translateButton.disabled = true;
+        setStatus('Изпращане на текста към 3D аватара...');
+
+        try {
+            const result = await window.TranslateAvatar.play(text);
+
+            if (result && result.success) {
+                setStatus(
+                    'Преводът приключи. Изпълнени жестове: ' +
+                    result.played
+                );
+            } else {
+                setStatus(
+                    'Не бяха изпълнени жестове. Провери въведения текст и каталога.'
+                );
+            }
+
+        } catch (error) {
+            console.error('Грешка при превода:', error);
+            setStatus('Грешка при превода: ' + error.message);
+
+        } finally {
+            translateButton.disabled = false;
+        }
+    });
+
+    // -----------------------------------------------------
+    // CLEAR TEXT
     // -----------------------------------------------------
 
     clearButton.addEventListener('click', function () {
@@ -210,17 +248,24 @@
             window.speechSynthesis.cancel();
         }
 
+        if (
+            window.TranslateAvatar &&
+            typeof window.TranslateAvatar.stop === 'function'
+        ) {
+            window.TranslateAvatar.stop();
+        }
+
         setStatus('Текстът е изчистен.');
         textInput.focus();
     });
 
     // -----------------------------------------------------
-    // Manual typing
+    // MANUAL TYPING
     // -----------------------------------------------------
 
     textInput.addEventListener('input', function () {
         if (textInput.value.trim()) {
-            setStatus('Текстът е готов за прочитане.');
+            setStatus('Текстът е готов за превод.');
         } else {
             setStatus('Въведи текст, за да започнеш.');
         }
