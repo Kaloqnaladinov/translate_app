@@ -150,7 +150,9 @@ function initializeScene() {
         CONFIG.cameraFar
     );
 
-camera.position.set(0, 2.25, 9.5);
+// По-близък кадър, насочен към горната част на тялото.
+camera.position.set(0, 2.85, 7.2);
+camera.lookAt(0, 2.85, 0);
 
     // Renderer
 
@@ -227,18 +229,18 @@ if (statusElement) {
             renderer.domElement
         );
 
-        controls.enableDamping = true;
+       controls.enableDamping = true;
 
-        controls.dampingFactor = 0.06;
+controls.dampingFactor = 0.06;
 
-controls.maxDistance = 15;
-        controls.minDistance = 2;
+controls.minDistance = 2;
+controls.maxDistance = 12;
 
-        controls.maxDistance = 12;
+controls.target.set(0, 2.85, 0);
 
-        controls.maxPolarAngle = Math.PI * 0.85;
+controls.maxPolarAngle = Math.PI * 0.85;
 
-        controls.update();
+controls.update();
     }
 
 
