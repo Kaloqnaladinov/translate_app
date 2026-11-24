@@ -245,6 +245,53 @@
     }
     .feature strong { display: block; font-size: 13px; margin-bottom: 2px; }
     .feature p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+
+    .language-note {
+      margin-top: 22px;
+      padding: 24px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: #e9eef1;
+      color: #4f5c64;
+    }
+    .language-note h3 {
+      margin: 0 0 10px;
+      color: var(--ink);
+      font-size: 18px;
+      letter-spacing: -.03em;
+    }
+    .language-note p {
+      margin: 8px 0;
+      font-size: 13px;
+      line-height: 1.75;
+    }
+    .language-sources {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 14px;
+      margin-top: 14px;
+      font-size: 11px;
+    }
+    .language-sources a {
+      color: #263f50;
+      font-weight: 750;
+    }
+    .screen-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 42px;
+      margin-top: 18px;
+      padding: 0 16px;
+      border-radius: 11px;
+      background: #e5eaed;
+      color: #172027;
+      text-decoration: none;
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .screen-link:hover { background: #d7e0e5; }
+
     .tech-panel {
       background: #151a1d; color: white; border-radius: 26px;
       padding: 38px; display: grid; grid-template-columns: .8fr 1.2fr; gap: 45px;
@@ -262,6 +309,30 @@
     }
     .tech-item strong { display: block; font-size: 13px; margin-bottom: 5px; }
     .tech-item p { margin: 0; color: #aeb9bf; font-size: 11px; line-height: 1.65; }
+    .tech-item a {
+      display: inline-block;
+      margin-top: 9px;
+      color: #d2e0e8;
+      font-size: 10px;
+      font-weight: 800;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+    .tech-note {
+      grid-column: 1 / -1;
+      padding: 17px;
+      border: 1px solid #3b474e;
+      border-radius: 14px;
+      background: #1d252a;
+      color: #c0cbd1;
+      font-size: 12px;
+      line-height: 1.75;
+    }
+    .tech-note strong {
+      display: block;
+      margin-bottom: 5px;
+      color: #fff;
+    }
     .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
     .step {
       padding: 23px; background: white; border: 1px solid var(--line); border-radius: 18px;
@@ -499,6 +570,18 @@ body {
             <p>Чуващият човек въвежда или диктува текст. Приложението цели да го представя чрез анимиран персонаж, който изпълнява съответните букви и проверени жестове.</p>
           </article>
         </div>
+
+        <aside class="language-note">
+          <h3>БЖЕ: жестовете не са само едноръчни</h3>
+          <p>В българския жестов език има жестове, които се изпълняват с една ръка, и жестове, при които участват и двете ръце. При двуръчните жестове двете ръце могат да се движат заедно или едната да служи като опорна. Затова системата за разпознаване трябва да проследява и двете ръце, когато жестът го изисква, както и тяхната форма, ориентация, позиция и движение.</p>
+          <p>Това не означава, че БЖЕ е руският жестов език. Научни публикации описват БЖЕ като самостоятелен език със собствена граматична и семантична структура, който споделя някои общи принципи с други жестови езици, включително руския. Общи характеристики или сходни движения не правят речниците и записите взаимозаменяеми.</p>
+          <p>Можем да използваме общи инструменти, формати за данни и методи за проследяване на движенията. Самите жестове, етикетите и обучаващите примери обаче трябва да бъдат събирани и проверявани конкретно за БЖЕ.</p>
+          <div class="language-sources">
+            <span>Източници:</span>
+            <a href="https://esnbu.org/data/files/2018/esnbu-vol4-issue2-2018.pdf" target="_blank" rel="noopener noreferrer">Изследване за БЖЕ</a>
+            <a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC4084854/" target="_blank" rel="noopener noreferrer">Изследване за едноръчни и двуръчни жестове</a>
+          </div>
+        </aside>
       </div>
     </section>
 
@@ -563,6 +646,7 @@ body {
                 <div><strong>Плаващ контролен панел</strong><p>Правоъгълният панел с двата бутона е позициониран отстрани и е предвиден да може да се мести по екрана.</p></div>
               </div>
             </div>
+            <a class="screen-link" href="kamera.html">Отвори екрана за камера ↗</a>
           </article>
 
           <article class="demo-card">
@@ -620,6 +704,7 @@ body {
                 <div><strong>Преведи</strong><p>Основният бутон, който подава текста за визуализиране чрез анимирания персонаж.</p></div>
               </div>
             </div>
+            <a class="screen-link" href="tekst.html">Отвори текстовия екран ↗</a>
           </article>
         </div>
       </div>
@@ -632,36 +717,46 @@ body {
             <div class="eyebrow">Под капака</div>
             <h2>Как технологията помага?</h2>
             <p class="intro">
-              Проектът комбинира уеб технологии, обработка на видео и машинно обучение.
-              Целта е да се изгради собствен процес за събиране на примери, анализ на
-              движенията и постепенно обучение на модел за разпознаване на жестове.
+              Проектът комбинира утвърдени уеб технологии и библиотеки с отворен код
+              със собствена разработка. Те осигуряват инструментите, а специфичните за БЖЕ
+              данни, означения и модел трябва да бъдат подготвени и проверени за този език.
             </p>
           </div>
           <div class="tech-list">
             <div class="tech-item">
+              <strong>MediaPipe · Apache License 2.0</strong>
+              <p>Инструмент с отворен код на Google за откриване и проследяване на ключови точки по ръцете и тялото. Не е готов преводач на БЖЕ.</p>
+              <a href="https://github.com/google-ai-edge/mediapipe" target="_blank" rel="noopener noreferrer">Официален проект ↗</a>
+            </div>
+            <div class="tech-item">
+              <strong>Python · PSF License 2.0</strong>
+              <p>Езикът за програмиране, използван в backend частта и инструментите за обработка на данни.</p>
+              <a href="https://docs.python.org/3/license.html" target="_blank" rel="noopener noreferrer">Лиценз ↗</a>
+            </div>
+            <div class="tech-item">
+              <strong>FastAPI · MIT License</strong>
+              <p>Отворена Python рамка за изграждане на API и комуникация между интерфейса и backend системата.</p>
+              <a href="https://github.com/fastapi/fastapi" target="_blank" rel="noopener noreferrer">Официален проект ↗</a>
+            </div>
+            <div class="tech-item">
+              <strong>Three.js · MIT License</strong>
+              <p>JavaScript библиотека с отворен код за 3D визуализация в браузъра, подходяща за сцената на персонажа.</p>
+              <a href="https://github.com/mrdoob/three.js" target="_blank" rel="noopener noreferrer">Официален проект ↗</a>
+            </div>
+            <div class="tech-item">
+              <strong>SQLite · Public Domain</strong>
+              <p>Лека база данни, чийто основен код е предоставен в обществено достояние. Подходяща за локални метаданни и записи.</p>
+              <a href="https://www.sqlite.org/copyright.html" target="_blank" rel="noopener noreferrer">Информация за правата ↗</a>
+            </div>
+            <div class="tech-item">
               <strong>HTML, CSS и JavaScript</strong>
-              <p>Изграждат интерфейса, управлението на екраните и взаимодействието с камерата.</p>
+              <p>Отворени уеб стандарти и основни браузърни технологии за интерфейса, оформлението и взаимодействието с камерата.</p>
+              <a href="https://developer.mozilla.org/" target="_blank" rel="noopener noreferrer">Документация ↗</a>
             </div>
-            <div class="tech-item">
-              <strong>MediaPipe</strong>
-              <p>Библиотека за откриване и проследяване на ключови точки по ръцете и тялото.</p>
-            </div>
-            <div class="tech-item">
-              <strong>Компютърно зрение</strong>
-              <p>Методи за анализ на изображенията и движението във видеозаписите.</p>
-            </div>
-            <div class="tech-item">
-              <strong>Python и FastAPI</strong>
-              <p>Backend частта обработва заявки, записи и подготвени данни.</p>
-            </div>
-            <div class="tech-item">
-              <strong>Машинно обучение</strong>
-              <p>Обучение и оценяване на модел върху проверени и правилно обозначени примери.</p>
-            </div>
-            <div class="tech-item">
-              <strong>3D персонаж</strong>
-              <p>Представя букви и жестове чрез отделни анимации, когато те са налични.</p>
-            </div>
+          </div>
+          <div class="tech-note">
+            <strong>Кое е собствената разработка на Translate App?</strong>
+            Архитектурата и логиката на приложението, конкретният интерфейс, процесът за събиране и означаване на записи на БЖЕ, подготвеният набор от данни, обучението и оценяването на собствен модел, както и създадените за проекта анимации. Отворените библиотеки са инструменти, създадени от техните автори — ние ги използваме и посочваме произхода им. Лицензът на тези библиотеки не определя автоматично лиценза на нашия код или на набора от жестове; те трябва да бъдат лицензирани отделно.
           </div>
         </div>
       </div>
