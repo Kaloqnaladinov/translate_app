@@ -457,10 +457,58 @@ body {
 .menu-screen {
     background-color: #fff;
     flex: 1;
-    padding: 60px 20px 40px 20px;
+    padding: 38px 20px 30px;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
+}
+
+.menu-heading {
+    text-align: center;
+    margin-bottom: 8px;
+}
+
+.menu-heading h1 {
+    margin: 0;
+    color: #111;
+    font-size: 30px;
+    line-height: 1.1;
+    font-weight: 900;
+    letter-spacing: -1.2px;
+}
+
+.menu-heading p {
+    max-width: 245px;
+    margin: 9px auto 0;
+    color: #68737a;
+    font-size: 11px;
+    line-height: 1.45;
+    font-weight: 600;
+}
+
+.guide-link {
+    width: 70%;
+    max-width: 240px;
+    min-height: 38px;
+    margin: 4px auto 0;
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border: 1px solid #c6d2dc;
+    border-radius: 13px;
+    background: #f5f7f8;
+    color: #25323a;
+    text-decoration: none;
+    text-align: center;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.guide-link:active {
+    background: #e5eaed;
+    transform: scale(.98);
 }
 
 .main-buttons {
