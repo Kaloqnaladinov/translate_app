@@ -1,32 +1,62 @@
 
-"""Extract hand and body landmarks from raw sign-language videos."""
+"""Extract body and hand landmarks from source sign-language videos."""
 
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
 from backend.dataset_manager import DATASET_DIR, RAW_DIR
 
 PROCESSED_DIR = DATASET_DIR / "processed"
+SOURCE_DIR = RAW_DIR / "source"
+
+SOURCE_FOLDERS = {
+    "letters": SOURCE_DIR / "letters",
+    "words": SOURCE_DIR / "words",
+}
+
 SUPPORTED_EXTENSIONS = {".webm", ".mp4", ".mov"}
-EXTRACTION_VERSION = "1.1"
+EXTRACTION_VERSION = "1.2"
+
+# Pseudonymous participant IDs.
+PARTICIPANTS = {
+    "ani": "participant_002",
+    "bozhi": "participant_003",
+    "sofi": "participant_001",
+}
 
 
 class ExtractionError(Exception):
     """Raised when video landmark extraction fails."""
 
 
-def _validate_video_path(video_path: str | Path) -> Path:
-    """Accept only existing video files stored directly in dataset/raw."""
-    raw_root = RAW_DIR.resolve()
-    source = Path(video_path).resolve()
+def discover_source_videos() -> list[Path]:
+    """Find videos inside source/letters and source/words."""
 
-    if source.parent != raw_root:
-        raise ExtractionError(
-            "Video must be stored directly inside dataset/raw."
-        )
+    videos = []
+
+    for folder in SOURCE_FOLDERS.values():
+        if not folder.is_dir():
+            continue
+
+        for path in folder.rglob("*"):
+            if (
+                path.is_file()
+                and path.suffix.lower() in SUPPORTED_EXTENSIONS
+            ):
+                videos.append(path)
+
+    return sorted(videos, key=lambda path: str(path).lower())
+
+
+def _validate_video_path(video_path: str | Path) -> Path:
+    """Accept videos from dataset/raw or its source subdirectories."""
+
+    source = Path(video_path).resolve()
+    raw_root = RAW_DIR.resolve()
 
     if not source.is_file():
         raise ExtractionError("Video file does not exist.")
@@ -34,11 +64,72 @@ def _validate_video_path(video_path: str | Path) -> Path:
     if source.suffix.lower() not in SUPPORTED_EXTENSIONS:
         raise ExtractionError("Unsupported video format.")
 
+    try:
+        source.relative_to(raw_root)
+    except ValueError as error:
+        raise ExtractionError(
+            "Video must be stored inside dataset/raw."
+        ) from error
+
     return source
+
+
+def _get_video_metadata(source: Path) -> dict[str, str | None]:
+    """Infer category, participant and label from source filename."""
+
+    try:
+        relative = source.relative_to(SOURCE_DIR.resolve())
+    except ValueError:
+        return {
+            "category": None,
+            "participant_id": None,
+            "label": None,
+        }
+
+    category = relative.parts[0] if relative.parts else None
+
+    stem = source.stem
+    participant_id = None
+    label = None
+
+    for prefix, identifier in PARTICIPANTS.items():
+        if stem.lower().startswith(prefix + "_"):
+            participant_id = identifier
+            label = stem[len(prefix) + 1:]
+            break
+
+    if label:
+        # Remove repetition suffixes such as _1, _2, _1-1.
+        label = re.sub(r"(?:_|-)\d+(?:-\d+)?$", "", label)
+
+        # Normalize separators without changing the original video.
+        label = re.sub(r"[_\s]+", " ", label).strip()
+
+    return {
+        "category": category,
+        "participant_id": participant_id,
+        "label": label or None,
+    }
+
+
+def _output_filename(source: Path) -> str:
+    """Create a unique output name based on the source folder."""
+
+    try:
+        relative = source.relative_to(SOURCE_DIR.resolve())
+        parts = list(relative.parts[:-1]) + [source.stem]
+        safe_name = "__".join(parts)
+    except ValueError:
+        safe_name = source.stem
+
+    safe_name = re.sub(r"[^\w.-]+", "_", safe_name)
+
+    return f"{safe_name}.landmarks.jsonl"
 
 
 def _landmarks_to_list(landmarks: Any) -> list[dict[str, float]] | None:
     """Convert MediaPipe landmarks into JSON-compatible coordinates."""
+
     if landmarks is None:
         return None
 
@@ -68,14 +159,15 @@ def extract_video_landmarks(
     recording_id: str | None = None,
     label: str | None = None,
     participant_id: str | None = None,
+    overwrite: bool = False,
 ) -> dict[str, Any]:
-    """
-    Extract pose and both-hand landmarks from a video.
+    """Extract pose and both-hand landmarks from one video."""
 
-    The original video is never modified.
-    Results are written to dataset/processed as JSON Lines.
-    """
-    if isinstance(frame_step, bool) or not isinstance(frame_step, int) or frame_step < 1:
+    if (
+        isinstance(frame_step, bool)
+        or not isinstance(frame_step, int)
+        or frame_step < 1
+    ):
         raise ExtractionError("frame_step must be a positive integer.")
 
     if model_complexity not in (0, 1, 2):
@@ -103,24 +195,33 @@ def extract_video_landmarks(
             raise ExtractionError(f"{name} must be a non-empty string.")
 
     source = _validate_video_path(video_path)
+    inferred = _get_video_metadata(source)
+
+    label = label or inferred["label"]
+    participant_id = participant_id or inferred["participant_id"]
 
     try:
         import cv2
         import mediapipe as mp
     except ImportError as error:
         raise ExtractionError(
-            "Landmark extraction requires OpenCV and MediaPipe. "
-            "Install them with: pip install opencv-python mediapipe"
+            "Install OpenCV and MediaPipe before extraction."
         ) from error
+
+    # This API is used by the current extraction implementation.
+    if not hasattr(mp, "solutions"):
+        raise ExtractionError(
+            "This MediaPipe installation does not expose mp.solutions. "
+            "Check the installed MediaPipe version before extraction."
+        )
 
     PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
 
-    output_path = PROCESSED_DIR / f"{source.stem}.landmarks.jsonl"
+    output_path = PROCESSED_DIR / _output_filename(source)
 
-    if output_path.exists():
+    if output_path.exists() and not overwrite:
         raise ExtractionError(
-            "An extraction result already exists for this video. "
-            "Delete or move the existing result before retrying."
+            f"Extraction already exists: {output_path.name}"
         )
 
     capture = cv2.VideoCapture(str(source))
@@ -153,14 +254,18 @@ def extract_video_landmarks(
             min_tracking_confidence=float(min_tracking_confidence),
         ) as holistic:
 
-            with output_path.open("x", encoding="utf-8") as output:
+            with output_path.open("w" if overwrite else "x", encoding="utf-8") as output:
                 metadata = {
                     "record_type": "metadata",
                     "schema_version": EXTRACTION_VERSION,
                     "recording_id": recording_id,
                     "label": label,
                     "participant_id": participant_id,
+                    "category": inferred["category"],
                     "source_filename": source.name,
+                    "source_relative_path": str(
+                        source.relative_to(RAW_DIR.resolve())
+                    ),
                     "fps": fps,
                     "width": width,
                     "height": height,
@@ -172,8 +277,11 @@ def extract_video_landmarks(
                 }
 
                 output.write(
-                    json.dumps(metadata, ensure_ascii=False, allow_nan=False)
-                    + "\n"
+                    json.dumps(
+                        metadata,
+                        ensure_ascii=False,
+                        allow_nan=False,
+                    ) + "\n"
                 )
 
                 while True:
@@ -215,8 +323,12 @@ def extract_video_landmarks(
                     }
 
                     output.write(
-                        json.dumps(frame_data, allow_nan=False) + "\n"
+                        json.dumps(
+                            frame_data,
+                            allow_nan=False,
+                        ) + "\n"
                     )
+
                     processed_frames += 1
 
                 output.flush()
@@ -230,6 +342,7 @@ def extract_video_landmarks(
             "recording_id": recording_id,
             "label": label,
             "participant_id": participant_id,
+            "category": inferred["category"],
             "source": source.name,
             "output_filename": output_path.name,
             "total_frames_read": frame_index,
@@ -251,3 +364,57 @@ def extract_video_landmarks(
 
         if not success_completed:
             output_path.unlink(missing_ok=True)
+
+
+def extract_source_dataset(
+    frame_step: int = 1,
+    model_complexity: int = 1,
+    overwrite: bool = False,
+) -> dict[str, Any]:
+    """Extract all videos found in source/letters and source/words."""
+
+    videos = discover_source_videos()
+
+    results = []
+    errors = []
+    skipped = []
+
+    for video in videos:
+        output_name = _output_filename(video)
+        output_path = PROCESSED_DIR / output_name
+
+        if output_path.exists() and not overwrite:
+            skipped.append(video.name)
+            continue
+
+        try:
+            result = extract_video_landmarks(
+                video_path=video,
+                frame_step=frame_step,
+                model_complexity=model_complexity,
+                overwrite=overwrite,
+            )
+            results.append(result)
+
+            print(
+                f"[OK] {video.name}: "
+                f"{result['processed_frames']} frames"
+            )
+
+        except Exception as error:
+            errors.append({
+                "filename": video.name,
+                "error": str(error),
+            })
+
+            print(f"[ERROR] {video.name}: {error}")
+
+    return {
+        "discovered": len(videos),
+        "processed": len(results),
+        "skipped": len(skipped),
+        "failed": len(errors),
+        "results": results,
+        "skipped_files": skipped,
+        "errors": errors,
+    }
