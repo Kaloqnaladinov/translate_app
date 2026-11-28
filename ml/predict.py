@@ -166,9 +166,22 @@ def predict_recording(
             "top_k must be at least 1."
         )
 
-    landmarks_path = Path(landmarks_path)
-    model_path = Path(model_path)
-    metadata_path = Path(metadata_path)
+    landmarks_path = Path(landmarks_path).resolve()
+    model_path = Path(model_path).resolve()
+    metadata_path = Path(metadata_path).resolve()
+
+    forbidden_dir = (
+        PROJECT_ROOT / "dataset" / "raw" / "source" / "nonedited"
+    ).resolve()
+
+    try:
+      landmarks_path.relative_to(forbidden_dir)
+    except ValueError:
+     pass
+    else:
+      raise PredictionError(
+        "Prediction from dataset/raw/source/nonedited is forbidden."
+    )
 
     print("\n=== TRANSLATE APP GESTURE PREDICTION ===")
 

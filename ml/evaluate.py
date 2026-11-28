@@ -60,12 +60,15 @@ def _check_evaluation_directory(directory: Path) -> None:
     except ValueError:
         pass
 
-    if resolved == processed:
-        raise EvaluationError(
-            "The processed training dataset cannot be used "
-            "for independent evaluation."
-        )
-
+    try:
+        resolved.relative_to(processed)
+    except ValueError:
+      pass
+    else:
+       raise EvaluationError(
+         "The processed training dataset and its subdirectories "
+         "cannot be used for independent evaluation."
+    )
     if not resolved.is_dir():
         raise EvaluationError(
             f"Evaluation directory does not exist: {resolved}"

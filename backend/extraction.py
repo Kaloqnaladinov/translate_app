@@ -55,10 +55,14 @@ def discover_source_videos() -> list[Path]:
 
 
 def _validate_video_path(video_path: str | Path) -> Path:
-    """Only accept videos stored inside dataset/raw."""
+    """Accept videos inside dataset/raw, except the forbidden nonedited folder."""
 
     source = Path(video_path).resolve()
     raw_root = RAW_DIR.resolve()
+
+    forbidden_dir = (
+        raw_root / "source" / "nonedited"
+    ).resolve()
 
     if not source.is_file():
         raise ExtractionError("Video file does not exist.")
@@ -66,6 +70,17 @@ def _validate_video_path(video_path: str | Path) -> Path:
     if source.suffix.lower() not in SUPPORTED_EXTENSIONS:
         raise ExtractionError("Unsupported video format.")
 
+    # Забраняваме nonedited и всички нейни подпапки.
+    try:
+        source.relative_to(forbidden_dir)
+    except ValueError:
+        pass
+    else:
+        raise ExtractionError(
+            "Videos from dataset/raw/source/nonedited cannot be processed."
+        )
+
+    # Видеото трябва да се намира вътре в dataset/raw.
     try:
         source.relative_to(raw_root)
     except ValueError as error:
@@ -74,7 +89,6 @@ def _validate_video_path(video_path: str | Path) -> Path:
         ) from error
 
     return source
-
 
 def _normalize_label(label: str) -> str:
     """Normalize filename-derived labels without merging meanings."""

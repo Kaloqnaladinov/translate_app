@@ -6,6 +6,7 @@ This version does not calculate validation or test accuracy.
 """
 
 from __future__ import annotations
+import shutil
 
 import argparse
 import json
@@ -93,7 +94,7 @@ def _save_model(
     model: Any,
     metadata: dict[str, Any],
 ) -> tuple[Path, Path]:
-    """Save model and metadata."""
+    """Save model and metadata with rollback on failure."""
 
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -102,6 +103,16 @@ def _save_model(
 
     temporary_model = MODELS_DIR / (MODEL_FILENAME + ".tmp")
     temporary_metadata = MODELS_DIR / (METADATA_FILENAME + ".tmp")
+
+    backup_model = MODELS_DIR / (MODEL_FILENAME + ".bak")
+    backup_metadata = MODELS_DIR / (METADATA_FILENAME + ".bak")
+
+    had_model = model_path.exists()
+    had_metadata = metadata_path.exists()
+
+    # Премахваме евентуални остатъци от старо прекъснато запазване.
+    backup_model.unlink(missing_ok=True)
+    backup_metadata.unlink(missing_ok=True)
 
     try:
         with temporary_model.open("wb") as file:
@@ -119,16 +130,48 @@ def _save_model(
                 indent=4,
             )
 
+        if had_model:
+            shutil.copy2(model_path, backup_model)
+
+        if had_metadata:
+            shutil.copy2(metadata_path, backup_metadata)
+
         temporary_model.replace(model_path)
         temporary_metadata.replace(metadata_path)
 
     except (OSError, pickle.PickleError) as error:
-        temporary_model.unlink(missing_ok=True)
-        temporary_metadata.unlink(missing_ok=True)
+        try:
+            if backup_model.exists():
+                backup_model.replace(model_path)
+            elif not had_model:
+                model_path.unlink(missing_ok=True)
+
+            if backup_metadata.exists():
+                backup_metadata.replace(metadata_path)
+            elif not had_metadata:
+                metadata_path.unlink(missing_ok=True)
+
+        except OSError as restore_error:
+            raise TrainingError(
+                "Saving failed and automatic rollback was incomplete. "
+                f"Save error: {error}. Restore error: {restore_error}. "
+                "Keep the .bak files for manual recovery."
+            ) from restore_error
+
+        finally:
+            temporary_model.unlink(missing_ok=True)
+            temporary_metadata.unlink(missing_ok=True)
+
+        backup_model.unlink(missing_ok=True)
+        backup_metadata.unlink(missing_ok=True)
 
         raise TrainingError(
             f"Could not save model files: {error}"
         ) from error
+
+    # Почистването на backup не трябва да отменя успешно запазване.
+    backup_model.unlink(missing_ok=True)
+    backup_metadata.unlink(missing_ok=True)
 
     return model_path, metadata_path
 
