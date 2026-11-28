@@ -1,5 +1,5 @@
 
-"""Train the first experimental sign-language classifier."""
+"""Train an experimental sign-language classifier using all recordings."""
 
 from __future__ import annotations
 
@@ -13,10 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from ml.dataset import (
-    DatasetError,
-    load_dataset,
-)
+from ml.dataset import DatasetError, load_dataset
 from ml.preprocess import (
     DEFAULT_SEQUENCE_LENGTH,
     FEATURES_PER_FRAME,
@@ -139,9 +136,9 @@ def train_model(
             "At least 10 estimators are required."
         )
 
-    print("\n=== TRANSLATE APP FIRST MODEL ===")
+    print("\n=== TRANSLATE APP EXPERIMENTAL MODEL TRAINING ===")
 
-    # 1. Load dataset.
+    # 1. Load complete dataset.
     print("\n1. Loading complete dataset...")
 
     recordings = load_dataset()
@@ -164,11 +161,11 @@ def train_model(
             "At least two gesture classes are required."
         )
 
-    print(f"   Recordings:   {len(recordings)}")
-    print(f"   Participants: {len(participants)}")
+    print(f"   Recordings:      {len(recordings)}")
+    print(f"   Participants:    {len(participants)}")
     print(f"   Gesture classes: {len(labels)}")
 
-    # 2. Check class distribution.
+    # 2. Inspect class distribution.
     label_counts = Counter(
         item.label for item in recordings
     )
@@ -179,18 +176,20 @@ def train_model(
         if count == 1
     )
 
-    print("\n2. Dataset distribution...")
+    print("\n2. Checking gesture distribution...")
     print(f"   Classes with one recording: {len(singleton_labels)}")
-    print(f"   Classes with multiple recordings: "
-          f"{len(labels) - len(singleton_labels)}")
+    print(
+        "   Classes with multiple recordings: "
+        f"{len(labels) - len(singleton_labels)}"
+    )
 
     if singleton_labels:
         print(
             "   WARNING: Some classes have only one example."
         )
 
-    # 3. Preprocess ALL recordings.
-    print("\n3. Preprocessing all recordings...")
+    # 3. Preprocess every recording.
+    print("\n3. Preprocessing ALL recordings...")
 
     processed = preprocess_dataset(recordings)
 
@@ -219,8 +218,8 @@ def train_model(
         n_jobs=-1,
     )
 
-    # 5. Train on every recording.
-    print("\n5. Training on the complete dataset...")
+    # 5. Train on all recordings.
+    print("\n5. Training on the COMPLETE dataset...")
     print("   Please wait...")
 
     model.fit(X_train, y_train)
@@ -257,6 +256,8 @@ def train_model(
             "is required."
         ),
         "participant_independent_test": False,
+        "validation_performed": False,
+        "test_performed": False,
     }
 
     # 7. Save model.
@@ -268,6 +269,8 @@ def train_model(
     print(f"   Metadata: {metadata_path}")
 
     print("\n=== TRAINING COMPLETED ===")
+    print(f"Training recordings: {len(recordings)}")
+    print(f"Learned classes: {len(model.classes_)}")
     print("Model training: PASSED")
     print("Independent evaluation: NOT YET PERFORMED")
 
