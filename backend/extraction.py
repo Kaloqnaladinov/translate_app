@@ -266,8 +266,20 @@ def extract_video_landmarks(
 
     PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
 
-    output_path = PROCESSED_DIR / _output_filename(source)
+    if output_path is None:
+      output_path = PROCESSED_DIR / _output_filename(source)
+    else:
+     output_path = Path(output_path).resolve()
 
+    if output_path.parent != PROCESSED_DIR.resolve():
+        raise ExtractionError(
+            "Custom output must be directly inside dataset/processed."
+        )
+
+    if not output_path.name.endswith(".landmarks.jsonl"):
+        raise ExtractionError(
+            "Output filename must end with .landmarks.jsonl."
+        )
     if output_path.exists() and not overwrite:
         raise ExtractionError(
             f"Extraction already exists: {output_path.name}"
@@ -439,6 +451,7 @@ def extract_source_dataset(
     frame_step: int = 1,
     model_complexity: int = 1,
     overwrite: bool = False,
+    output_path: str | Path | None = None,
 ) -> dict[str, Any]:
     """Extract all videos in source/letters and source/words."""
 

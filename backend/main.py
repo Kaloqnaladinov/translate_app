@@ -37,8 +37,12 @@ from .dataset_manager import (
     NotFoundError,
     ValidationError,
     RAW_DIR,
+    PROCESSED_DIR,
 )
-
+from ml.predict import (
+    PredictionError,
+    predict_recording,
+)
 from .recorder import (
     EmptyUploadError,
     RecorderError,
@@ -301,6 +305,78 @@ def get_recording_file(recording_id: str):
 # ---------------------------------------------------------------------
 
 @app.post("/api/recordings/{recording_id}/extract")
+
+# ---------------------------------------------------------------------
+# Predict gesture from an uploaded recording
+# ---------------------------------------------------------------------
+
+@app.post("/api/recordings/{recording_id}/predict")
+def predict_recording_endpoint(recording_id: str) -> dict:
+    """
+    Extract temporary landmarks and predict one recorded gesture.
+
+    Temporary landmarks are deleted after prediction.
+    The training dataset is not modified.
+    """
+
+    try:
+        record = dataset_manager.get_recording_by_id(
+            recording_id
+        )
+        video_path = dataset_manager.get_video_path(record)
+
+    except DatasetError as exc:
+        raise _to_http_error(exc) from exc
+
+    from uuid import uuid4
+
+    temporary_landmarks = (
+        PROCESSED_DIR /
+        f"prediction__{uuid4().hex}.landmarks.jsonl"
+    )
+
+    try:
+        # 1. Extract landmarks from the uploaded video.
+        extraction_result = extract_video_landmarks(
+            video_path=video_path,
+            recording_id=record["id"],
+            label="prediction",
+            participant_id=record["participant_id"],
+            output_path=temporary_landmarks,
+        )
+
+        # 2. Run the trained AI model.
+        prediction = predict_recording(
+            landmarks_path=temporary_landmarks,
+            top_k=5,
+        )
+
+        return {
+            "status": "success",
+            "recording_id": recording_id,
+            "extraction": {
+                "frames": extraction_result["processed_frames"],
+                "output": "temporary",
+            },
+            "prediction": prediction,
+        }
+
+    except ExtractionError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="Could not extract landmarks from the video.",
+        ) from exc
+
+    except PredictionError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="AI prediction is currently unavailable.",
+        ) from exc
+
+    finally:
+        # Never leave temporary prediction data in the dataset.
+        temporary_landmarks.unlink(missing_ok=True)
+
 def extract_recording_landmarks(recording_id: str) -> dict:
     """Extract MediaPipe landmarks from an existing recording."""
 

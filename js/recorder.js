@@ -573,11 +573,72 @@ const API_BASE_URL =
                 );
             }
 
-            recordedChunks = [];
+           
+recordedChunks = [];
 
-            setStatus(
-                `Записът е запазен успешно! ID: ${result.id}`
-            );
+setStatus(
+    `Записът е запазен успешно! ID: ${result.id}`
+);
+
+// AI gesture prediction
+try {
+    console.info('[Translate AI] Стартиране на разпознаването...');
+
+    const predictionResponse = await fetch(
+        `${API_BASE_URL}/api/recordings/${encodeURIComponent(result.id)}/predict`,
+        {
+            method: 'POST',
+            headers: {
+                'Accept': 'application/json'
+            }
+        }
+    );
+
+    const predictionResult = await predictionResponse
+        .json()
+        .catch(() => ({}));
+
+    if (!predictionResponse.ok) {
+        throw new Error(
+            predictionResult.detail ||
+            `Prediction failed: HTTP ${predictionResponse.status}`
+        );
+    }
+
+    if (
+        predictionResult.status !== 'success' ||
+        !predictionResult.prediction
+    ) {
+        throw new Error('Invalid prediction response.');
+    }
+
+    const prediction = predictionResult.prediction;
+
+    console.info(
+        '[Translate AI] РАЗПОЗНАТ ЖЕСТ:',
+        prediction.predicted_label
+    );
+
+    console.info(
+        '[Translate AI] ВЕРОЯТНОСТ:',
+        `${(prediction.confidence * 100).toFixed(2)}%`
+    );
+
+    console.table(prediction.top_predictions);
+
+    console.info(
+        '[Translate AI] Пълен резултат:',
+        prediction
+    );
+
+} catch (predictionError) {
+    // Качването остава успешно, дори ако AI разпознаването се провали.
+    console.error(
+        '[Translate AI] Грешка при разпознаването:',
+        predictionError
+    );
+}
+
 
 } catch (error) {
     // Подробностите остават в конзолата за диагностика.
