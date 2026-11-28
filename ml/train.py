@@ -1,5 +1,9 @@
 
-"""Train and save a sign-language gesture classification model."""
+"""Train and save the experimental Translate App gesture classifier.
+
+All available recordings are used for training.
+This version does not calculate validation or test accuracy.
+"""
 
 from __future__ import annotations
 
@@ -13,12 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from ml.dataset import (
-    DatasetError,
-    DEFAULT_DATASET_DIR,
-    load_dataset,
-    split_by_participant,
-)
+from ml.dataset import DatasetError, load_dataset
 from ml.preprocess import (
     DEFAULT_SEQUENCE_LENGTH,
     FEATURES_PER_FRAME,
@@ -42,17 +41,17 @@ class TrainingError(Exception):
 
 
 def _flatten_recording(recording: Any) -> list[float]:
-    """Flatten a complete temporal sequence into one feature vector."""
+    """Flatten one preprocessed recording into a feature vector."""
 
     if recording.sequence_length != DEFAULT_SEQUENCE_LENGTH:
         raise TrainingError(
-            f"Recording {recording.recording_id} has an invalid "
+            f"Recording {recording.recording_id} has invalid "
             f"sequence length: {recording.sequence_length}."
         )
 
     if recording.feature_count != FEATURES_PER_FRAME:
         raise TrainingError(
-            f"Recording {recording.recording_id} has an invalid "
+            f"Recording {recording.recording_id} has invalid "
             f"feature count: {recording.feature_count}."
         )
 
@@ -66,7 +65,7 @@ def _flatten_recording(recording: Any) -> list[float]:
 def _prepare_data(
     recordings: list[Any],
 ) -> tuple[list[list[float]], list[str]]:
-    """Convert preprocessed recordings into model input and labels."""
+    """Prepare model features and labels."""
 
     features = []
     labels = []
@@ -80,76 +79,29 @@ def _prepare_data(
 
     expected_size = DEFAULT_SEQUENCE_LENGTH * FEATURES_PER_FRAME
 
-    if any(len(row) != expected_size for row in features):
-        raise TrainingError(
-            f"Every input must contain exactly {expected_size} values."
-        )
-
-    return features, labels
-
-
-def _validate_split(split: Any, all_labels: set[str]) -> None:
-    """Ensure every gesture class is represented in every split."""
-
-    if not split.train:
-        raise TrainingError("The training split is empty.")
-
-    if not split.validation:
-        raise TrainingError("The validation split is empty.")
-
-    if not split.test:
-        raise TrainingError("The test split is empty.")
-
-    for split_name, samples in (
-        ("training", split.train),
-        ("validation", split.validation),
-        ("test", split.test),
-    ):
-        available_labels = {sample.label for sample in samples}
-        missing_labels = sorted(all_labels - available_labels)
-
-        if missing_labels:
+    for index, row in enumerate(features):
+        if len(row) != expected_size:
             raise TrainingError(
-                f"The {split_name} split is missing gesture classes: "
-                f"{', '.join(missing_labels)}. "
-                "Collect recordings of every gesture from more participants."
+                f"Recording at index {index} has {len(row)} features; "
+                f"expected {expected_size}."
             )
 
-    training_counts = Counter(
-        sample.label for sample in split.train
-    )
-
-    insufficient = {
-        label: count
-        for label, count in training_counts.items()
-        if count < 2
-    }
-
-    if insufficient:
-        details = ", ".join(
-            f"{label}: {count}"
-            for label, count in sorted(insufficient.items())
-        )
-
-        raise TrainingError(
-            "At least 2 training recordings per gesture are required. "
-            f"Insufficient classes: {details}."
-        )
+    return features, labels
 
 
 def _save_model(
     model: Any,
     metadata: dict[str, Any],
 ) -> tuple[Path, Path]:
-    """Save the trained model and metadata using temporary files."""
+    """Save model and metadata."""
 
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
     model_path = MODELS_DIR / MODEL_FILENAME
     metadata_path = MODELS_DIR / METADATA_FILENAME
 
-    temporary_model = model_path.with_suffix(".pkl.tmp")
-    temporary_metadata = metadata_path.with_suffix(".json.tmp")
+    temporary_model = MODELS_DIR / (MODEL_FILENAME + ".tmp")
+    temporary_metadata = MODELS_DIR / (METADATA_FILENAME + ".tmp")
 
     try:
         with temporary_model.open("wb") as file:
@@ -170,12 +122,12 @@ def _save_model(
         temporary_model.replace(model_path)
         temporary_metadata.replace(metadata_path)
 
-    except OSError as error:
+    except (OSError, pickle.PickleError) as error:
         temporary_model.unlink(missing_ok=True)
         temporary_metadata.unlink(missing_ok=True)
 
         raise TrainingError(
-            f"Could not save the trained model: {error}"
+            f"Could not save model files: {error}"
         ) from error
 
     return model_path, metadata_path
@@ -185,7 +137,7 @@ def train_model(
     estimators: int = DEFAULT_ESTIMATORS,
     seed: int = RANDOM_STATE,
 ) -> dict[str, Any]:
-    """Load, split, train, validate and save the classifier."""
+    """Train the classifier using every available recording."""
 
     if estimators < 10:
         raise TrainingError(
@@ -194,57 +146,70 @@ def train_model(
 
     print("\n=== TRANSLATE APP MODEL TRAINING ===")
 
-    print("\n1. Loading dataset...")
+    # 1. Load the complete dataset.
+    print("\n1. Loading complete dataset...")
 
     recordings = load_dataset()
 
-    print(f"   Loaded recordings: {len(recordings)}")
-    print(
-        "   Participants: "
-        f"{len({item.participant_id for item in recordings})}"
-    )
+    if len(recordings) < 2:
+        raise TrainingError(
+            "At least 2 recordings are required."
+        )
 
-    all_labels = {item.label for item in recordings}
+    participant_ids = sorted({
+        item.participant_id for item in recordings
+    })
+
+    all_labels = sorted({
+        item.label for item in recordings
+    })
 
     if len(all_labels) < 2:
         raise TrainingError(
-            "At least 2 different gesture classes are required "
-            "to train a classifier."
+            "At least 2 different gesture classes are required."
         )
 
-    print(f"   Gesture classes: {len(all_labels)}")
-
-    print("\n2. Splitting by participant...")
-
-    split = split_by_participant(
-        recordings,
-        seed=seed,
+    label_counts = Counter(item.label for item in recordings)
+    participant_counts = Counter(
+        item.participant_id for item in recordings
     )
 
-    _validate_split(split, all_labels)
+    print(f"   Recordings:   {len(recordings)}")
+    print(f"   Participants: {len(participant_ids)}")
+    print(f"   Gesture classes: {len(all_labels)}")
 
-    print(f"   Training recordings:   {len(split.train)}")
-    print(f"   Validation recordings: {len(split.validation)}")
-    print(f"   Test recordings:       {len(split.test)}")
+    print("\n   Recordings per participant:")
 
-    print("\n3. Preprocessing recordings...")
+    for participant_id, count in sorted(participant_counts.items()):
+        print(f"      {participant_id}: {count}")
 
-    train_data = preprocess_dataset(split.train)
-    validation_data = preprocess_dataset(split.validation)
+    print("\n   Recordings per gesture:")
 
-    X_train, y_train = _prepare_data(train_data)
-    X_validation, y_validation = _prepare_data(validation_data)
+    for label, count in sorted(label_counts.items()):
+        print(f"      {label}: {count}")
 
-    print(f"   Features per recording: {len(X_train[0])}")
-    print(f"   Training samples:       {len(X_train)}")
-    print(f"   Validation samples:     {len(X_validation)}")
+    # 2. Preprocess every recording.
+    print("\n2. Preprocessing all recordings...")
 
-    print("\n4. Initializing classifier...")
+    processed = preprocess_dataset(recordings)
+
+    if len(processed) != len(recordings):
+        raise TrainingError(
+            "The number of preprocessed recordings "
+            "does not match the original dataset."
+        )
+
+    X_train, y_train = _prepare_data(processed)
+
+    print(f"   Training samples: {len(X_train)}")
+    print(f"   Features per sample: {len(X_train[0])}")
+
+    # 3. Initialize the classifier.
+    print("\n3. Initializing Random Forest...")
 
     try:
         import sklearn
         from sklearn.ensemble import RandomForestClassifier
-        from sklearn.metrics import accuracy_score, f1_score
     except ImportError as error:
         raise TrainingError(
             "scikit-learn is not installed. "
@@ -259,30 +224,24 @@ def train_model(
         n_jobs=-1,
     )
 
-    print("\n5. Training model...")
+    # 4. Train on all available recordings.
+    print("\n4. Training model on ALL recordings...")
+    print("   No validation or test split is being used.")
 
     model.fit(X_train, y_train)
 
-    print("\n6. Evaluating on validation data...")
+    trained_classes = sorted(str(label) for label in model.classes_)
 
-    predictions = model.predict(X_validation)
-
-    validation_accuracy = float(
-        accuracy_score(y_validation, predictions)
-    )
-
-    validation_f1 = float(
-        f1_score(
-            y_validation,
-            predictions,
-            average="macro",
-            zero_division=0,
+    if set(trained_classes) != set(all_labels):
+        raise TrainingError(
+            "The trained model classes do not match "
+            "the dataset labels."
         )
-    )
 
-    print(f"   Validation accuracy: {validation_accuracy:.4f}")
-    print(f"   Validation macro F1: {validation_f1:.4f}")
+    print("\n   Model training completed.")
+    print(f"   Learned classes: {len(trained_classes)}")
 
+    # 5. Prepare metadata.
     metadata = {
         "model_name": "Translate App Sign Classifier",
         "model_type": "RandomForestClassifier",
@@ -296,26 +255,28 @@ def train_model(
         "input_features": (
             DEFAULT_SEQUENCE_LENGTH * FEATURES_PER_FRAME
         ),
-        "classes": sorted(str(label) for label in model.classes_),
-        "training_recordings": len(split.train),
-        "validation_recordings": len(split.validation),
-        "reserved_test_recordings": len(split.test),
-        "validation_accuracy": validation_accuracy,
-        "validation_macro_f1": validation_f1,
-        "participant_split": {
-            "train": sorted({
-                item.participant_id for item in split.train
-            }),
-            "validation": sorted({
-                item.participant_id for item in split.validation
-            }),
-            "test": sorted({
-                item.participant_id for item in split.test
-            }),
-        },
+        "training_scope": "all_available_recordings",
+        "training_recordings": len(recordings),
+        "participants": participant_ids,
+        "participant_counts": dict(sorted(participant_counts.items())),
+        "classes": trained_classes,
+        "class_counts": dict(sorted(label_counts.items())),
+        "evaluation_status": (
+            "not_evaluated_no_independent_test_set"
+        ),
+        "validation_accuracy": None,
+        "validation_macro_f1": None,
+        "test_accuracy": None,
+        "test_macro_f1": None,
+        "warning": (
+            "This is an experimental model. "
+            "All available recordings were used for training. "
+            "Independent evaluation on new recordings is required."
+        ),
     }
 
-    print("\n7. Saving model...")
+    # 6. Save model and metadata.
+    print("\n5. Saving model...")
 
     model_path, metadata_path = _save_model(model, metadata)
 
@@ -323,7 +284,8 @@ def train_model(
     print(f"   Metadata: {metadata_path}")
 
     print("\n=== TRAINING COMPLETED ===")
-    print("Model training: PASSED")
+    print("Training: PASSED")
+    print("Independent evaluation: NOT PERFORMED")
 
     return metadata
 
@@ -332,7 +294,10 @@ def main() -> None:
     """Command-line entry point."""
 
     parser = argparse.ArgumentParser(
-        description="Train the Translate App gesture classifier."
+        description=(
+            "Train the Translate App gesture classifier "
+            "using all available recordings."
+        )
     )
 
     parser.add_argument(
@@ -357,7 +322,11 @@ def main() -> None:
             seed=args.seed,
         )
 
-    except (DatasetError, PreprocessingError, TrainingError) as error:
+    except (
+        DatasetError,
+        PreprocessingError,
+        TrainingError,
+    ) as error:
         print(f"\nTraining could not be completed:\n{error}")
         sys.exit(1)
 
