@@ -1,525 +1,312 @@
-"""
-FastAPI backend for Translate App.
 
-Responsibilities:
-- receive video uploads;
-- delegate video storage to recorder.py;
-- delegate metadata operations to dataset_manager.py;
-- expose recording management endpoints;
-- preserve original recordings when metadata is deleted.
-"""
+"""Train the first experimental sign-language classifier."""
 
 from __future__ import annotations
 
-from .extraction import ExtractionError, extract_video_landmarks
+import argparse
+import json
+import pickle
+import sys
 
-from contextlib import asynccontextmanager
+from collections import Counter
 from datetime import datetime, timezone
-from typing import Optional
+from pathlib import Path
+from typing import Any
 
-from fastapi import (
-    FastAPI,
-    File,
-    Form,
-    HTTPException,
-    UploadFile,
-)
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
-from pydantic import BaseModel
-
-from . import dataset_manager
-
-from .dataset_manager import (
-    ConflictError,
-    DatabaseError,
+from ml.dataset import (
     DatasetError,
-    NotFoundError,
-    ValidationError,
-    RAW_DIR,
+    load_dataset,
 )
-
-from .recorder import (
-    EmptyUploadError,
-    RecorderError,
-    UploadTooLargeError,
-    UnsupportedVideoTypeError,
-    save_video_upload,
+from ml.preprocess import (
+    DEFAULT_SEQUENCE_LENGTH,
+    FEATURES_PER_FRAME,
+    PreprocessingError,
+    preprocess_dataset,
 )
 
 
-# ---------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+MODELS_DIR = PROJECT_ROOT / "dataset" / "models"
 
-MAX_LABEL_LENGTH = 80
+MODEL_FILENAME = "sign_classifier.pkl"
+METADATA_FILENAME = "sign_classifier.metadata.json"
 
-SERVICE_NAME = "translate-app-backend"
-
-API_VERSION = "0.1.0"
-
-# Local development configuration.
-# Restrict this list before production deployment.
-ALLOWED_ORIGINS = ["*"]
+RANDOM_STATE = 42
+DEFAULT_ESTIMATORS = 300
 
 
-# ---------------------------------------------------------------------
-# Application lifecycle
-# ---------------------------------------------------------------------
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Initialize required storage before the server starts."""
-
-    dataset_manager.init_db()
-
-    RAW_DIR.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
-
-    yield
+class TrainingError(Exception):
+    """Raised when model training cannot be completed."""
 
 
-app = FastAPI(
-    title="Translate App API",
-    version=API_VERSION,
-    description=(
-        "Backend foundation for the Bulgarian Sign Language "
-        "Translate App."
-    ),
-    lifespan=lifespan,
-)
+def flatten_recording(recording: Any) -> list[float]:
+    """Convert a preprocessed sequence into one feature vector."""
 
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
-# ---------------------------------------------------------------------
-# Error handling
-# ---------------------------------------------------------------------
-
-def _to_http_error(exc: DatasetError) -> HTTPException:
-    """Convert internal dataset exceptions into HTTP responses."""
-
-    if isinstance(exc, ValidationError):
-        return HTTPException(
-            status_code=422,
-            detail=str(exc),
+    if recording.sequence_length != DEFAULT_SEQUENCE_LENGTH:
+        raise TrainingError(
+            f"Invalid sequence length: {recording.recording_id}"
         )
 
-    if isinstance(exc, NotFoundError):
-        return HTTPException(
-            status_code=404,
-            detail=str(exc),
+    if recording.feature_count != FEATURES_PER_FRAME:
+        raise TrainingError(
+            f"Invalid feature count: {recording.recording_id}"
         )
 
-    if isinstance(exc, ConflictError):
-        return HTTPException(
-            status_code=409,
-            detail=str(exc),
-        )
-
-    if isinstance(exc, DatabaseError):
-        return HTTPException(
-            status_code=500,
-            detail="Internal database error.",
-        )
-
-    return HTTPException(
-        status_code=500,
-        detail="Internal server error.",
-    )
-
-
-# ---------------------------------------------------------------------
-# Response serialization
-# ---------------------------------------------------------------------
-
-_INTERNAL_FIELDS = {
-    "stored_filename",
-    "filename",
-    "file_path",
-}
-
-
-def _serialize_record(record: dict) -> dict:
-    """
-    Prepare a recording for the frontend.
-
-    Internal filesystem names and paths are never exposed.
-    """
-
-    result = {
-        key: value
-        for key, value in record.items()
-        if key not in _INTERNAL_FIELDS
-    }
-
-    result["file_url"] = (
-        f"/api/recordings/{record['id']}/file"
-    )
-
-    return result
-
-
-# ---------------------------------------------------------------------
-# Label validation
-# ---------------------------------------------------------------------
-
-def _validate_label(label: Optional[str]) -> Optional[str]:
-    """Validate the label received from the frontend."""
-
-    if label is None:
-        return None
-
-    if not isinstance(label, str):
-        raise HTTPException(
-            status_code=422,
-            detail="label must be a string.",
-        )
-
-    label = label.strip()
-
-    if not label:
-        return None
-
-    if len(label) > MAX_LABEL_LENGTH:
-        raise HTTPException(
-            status_code=422,
-            detail=(
-                f"label must contain at most "
-                f"{MAX_LABEL_LENGTH} characters."
-            ),
-        )
-
-    return label
-
-
-# ---------------------------------------------------------------------
-# Request models
-# ---------------------------------------------------------------------
-
-class LabelUpdate(BaseModel):
-    """Request body for PATCH /api/recordings/{recording_id}."""
-
-    label: Optional[str] = None
-
-
-# ---------------------------------------------------------------------
-# Health
-# ---------------------------------------------------------------------
-
-@app.get("/health")
-def health() -> dict:
-    """Return backend health status."""
-
-    return {
-        "status": "ok",
-        "service": SERVICE_NAME,
-        "version": API_VERSION,
-    }
-
-
-# ---------------------------------------------------------------------
-# List recordings
-# ---------------------------------------------------------------------
-
-@app.get("/api/recordings")
-def list_recordings() -> dict:
-    """Return all recordings."""
-
-    try:
-        records = dataset_manager.get_all_recordings()
-
-    except DatasetError as exc:
-        raise _to_http_error(exc) from exc
-
-    items = [
-        _serialize_record(record)
-        for record in records
+    return [
+        value
+        for frame in recording.sequence
+        for value in frame
     ]
 
-    return {
-        "items": items,
-        "count": len(items),
-    }
+
+def prepare_data(
+    recordings: list[Any],
+) -> tuple[list[list[float]], list[str]]:
+    """Prepare all recordings for classifier training."""
+
+    features = []
+    labels = []
+
+    for recording in recordings:
+        features.append(flatten_recording(recording))
+        labels.append(recording.label)
+
+    if not features:
+        raise TrainingError("No training recordings available.")
+
+    expected_size = DEFAULT_SEQUENCE_LENGTH * FEATURES_PER_FRAME
+
+    if any(len(row) != expected_size for row in features):
+        raise TrainingError(
+            f"Expected {expected_size} features per recording."
+        )
+
+    return features, labels
 
 
-# ---------------------------------------------------------------------
-# Get one recording
-# ---------------------------------------------------------------------
+def save_model(
+    model: Any,
+    metadata: dict[str, Any],
+) -> tuple[Path, Path]:
+    """Save model and metadata."""
 
-@app.get("/api/recordings/{recording_id}")
-def get_recording(recording_id: str) -> dict:
-    """Return one recording by ID."""
+    MODELS_DIR.mkdir(parents=True, exist_ok=True)
+
+    model_path = MODELS_DIR / MODEL_FILENAME
+    metadata_path = MODELS_DIR / METADATA_FILENAME
+
+    temporary_model = MODELS_DIR / "sign_classifier.tmp.pkl"
+    temporary_metadata = MODELS_DIR / "sign_classifier.tmp.json"
 
     try:
-        record = dataset_manager.get_recording_by_id(
-            recording_id
+        with temporary_model.open("wb") as file:
+            pickle.dump(
+                model,
+                file,
+                protocol=pickle.HIGHEST_PROTOCOL,
+            )
+
+        with temporary_metadata.open("w", encoding="utf-8") as file:
+            json.dump(
+                metadata,
+                file,
+                ensure_ascii=False,
+                indent=4,
+            )
+
+        temporary_model.replace(model_path)
+        temporary_metadata.replace(metadata_path)
+
+    except OSError as error:
+        temporary_model.unlink(missing_ok=True)
+        temporary_metadata.unlink(missing_ok=True)
+
+        raise TrainingError(
+            f"Could not save model: {error}"
+        ) from error
+
+    return model_path, metadata_path
+
+
+def train_model(
+    estimators: int = DEFAULT_ESTIMATORS,
+    seed: int = RANDOM_STATE,
+) -> dict[str, Any]:
+    """Train using every valid recording in the dataset."""
+
+    if estimators < 10:
+        raise TrainingError(
+            "At least 10 estimators are required."
         )
 
-    except DatasetError as exc:
-        raise _to_http_error(exc) from exc
+    print("\n=== TRANSLATE APP FIRST MODEL ===")
 
-    return _serialize_record(record)
+    # 1. Load dataset.
+    print("\n1. Loading complete dataset...")
 
+    recordings = load_dataset()
 
-# ---------------------------------------------------------------------
-# Download / stream original video
-# ---------------------------------------------------------------------
-
-@app.get("/api/recordings/{recording_id}/file")
-def get_recording_file(recording_id: str):
-    """Return the original video file."""
-
-    try:
-        record = dataset_manager.get_recording_by_id(
-            recording_id
+    if len(recordings) < 2:
+        raise TrainingError(
+            "At least two recordings are required."
         )
 
-        video_path = dataset_manager.get_video_path(
-            record
+    participants = sorted({
+        item.participant_id for item in recordings
+    })
+
+    labels = sorted({
+        item.label for item in recordings
+    })
+
+    if len(labels) < 2:
+        raise TrainingError(
+            "At least two gesture classes are required."
         )
 
-    except DatasetError as exc:
-        raise _to_http_error(exc) from exc
+    print(f"   Recordings:   {len(recordings)}")
+    print(f"   Participants: {len(participants)}")
+    print(f"   Gesture classes: {len(labels)}")
 
-    return FileResponse(
-        path=video_path,
-        media_type=record["content_type"],
-        filename=record["original_filename"],
+    # 2. Check class distribution.
+    label_counts = Counter(
+        item.label for item in recordings
     )
 
-# ---------------------------------------------------------------------
-# Extract landmarks from a recording
-# ---------------------------------------------------------------------
+    singleton_labels = sorted(
+        label
+        for label, count in label_counts.items()
+        if count == 1
+    )
 
-@app.post("/api/recordings/{recording_id}/extract")
-def extract_recording_landmarks(recording_id: str) -> dict:
-    """Extract MediaPipe landmarks from an existing recording."""
+    print("\n2. Dataset distribution...")
+    print(f"   Classes with one recording: {len(singleton_labels)}")
+    print(f"   Classes with multiple recordings: "
+          f"{len(labels) - len(singleton_labels)}")
 
-    try:
-        record = dataset_manager.get_recording_by_id(recording_id)
-        video_path = dataset_manager.get_video_path(record)
-
-    except DatasetError as exc:
-        raise _to_http_error(exc) from exc
-
-    label = record.get("label")
-
-    if not label or label.strip().lower() == "камерен запис":
-        raise HTTPException(
-            status_code=422,
-            detail="Set a valid sign label before extracting landmarks.",
+    if singleton_labels:
+        print(
+            "   WARNING: Some classes have only one example."
         )
 
+    # 3. Preprocess ALL recordings.
+    print("\n3. Preprocessing all recordings...")
+
+    processed = preprocess_dataset(recordings)
+
+    X_train, y_train = prepare_data(processed)
+
+    print(f"   Processed recordings: {len(X_train)}")
+    print(f"   Features per recording: {len(X_train[0])}")
+
+    # 4. Initialize classifier.
+    print("\n4. Initializing Random Forest...")
+
     try:
-        result = extract_video_landmarks(
-            video_path=video_path,
-            recording_id=record["id"],
-            label=label,
-            participant_id=record["participant_id"],
-        )
+        import sklearn
+        from sklearn.ensemble import RandomForestClassifier
+    except ImportError as error:
+        raise TrainingError(
+            "scikit-learn is missing. Install it with "
+            "python -m pip install scikit-learn"
+        ) from error
 
-    except ExtractionError as exc:
-        message = str(exc)
+    model = RandomForestClassifier(
+        n_estimators=estimators,
+        random_state=seed,
+        max_features="sqrt",
+        class_weight="balanced_subsample",
+        n_jobs=-1,
+    )
 
-        if "already exists" in message:
-            raise HTTPException(
-                status_code=409,
-                detail=message,
-            ) from exc
+    # 5. Train on every recording.
+    print("\n5. Training on the complete dataset...")
+    print("   Please wait...")
 
-        raise HTTPException(
-            status_code=422,
-            detail=message,
-        ) from exc
+    model.fit(X_train, y_train)
 
-    return {
-        "status": "completed",
-        "message": "Landmarks extracted successfully.",
-        "result": result,
+    print("\n   Training completed.")
+    print(f"   Learned classes: {len(model.classes_)}")
+
+    # 6. Save metadata.
+    metadata = {
+        "model_name": "Translate App First Experimental Model",
+        "model_type": "RandomForestClassifier",
+        "model_format": "pickle",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "sklearn_version": sklearn.__version__,
+        "random_state": seed,
+        "estimators": estimators,
+        "sequence_length": DEFAULT_SEQUENCE_LENGTH,
+        "features_per_frame": FEATURES_PER_FRAME,
+        "input_features": (
+            DEFAULT_SEQUENCE_LENGTH * FEATURES_PER_FRAME
+        ),
+        "training_recordings": len(recordings),
+        "participants": participants,
+        "participant_count": len(participants),
+        "classes": sorted(str(label) for label in model.classes_),
+        "class_count": len(model.classes_),
+        "recordings_per_class": dict(sorted(label_counts.items())),
+        "single_recording_classes": singleton_labels,
+        "evaluation_status": "NOT_INDEPENDENTLY_EVALUATED",
+        "evaluation_note": (
+            "All available recordings were used for training. "
+            "Training performance is not a measure of generalization. "
+            "Independent evaluation with new recordings and signers "
+            "is required."
+        ),
+        "participant_independent_test": False,
     }
-# ---------------------------------------------------------------------
-# Create recording
-# ---------------------------------------------------------------------
 
-@app.post(
-    "/api/recordings",
-    status_code=201,
-)
-async def create_recording(
-    file: UploadFile = File(...),
-    participant_id: str = Form(...),
-    consent: bool = Form(...),
-    label: Optional[str] = Form(None),
-) -> dict:
-    """
-    Receive a video and save its metadata.
+    # 7. Save model.
+    print("\n6. Saving model...")
 
-    Expected multipart/form-data fields:
-        file
-        participant_id
-        consent
-        label (optional)
-    """
+    model_path, metadata_path = save_model(model, metadata)
 
-    # 1. Validate consent before accepting the upload.
-    if not consent:
-        raise HTTPException(
-            status_code=422,
-            detail="Consent is required to store a recording.",
-        )
+    print(f"   Model: {model_path}")
+    print(f"   Metadata: {metadata_path}")
 
-    # 2. Validate participant ID.
-    try:
-        participant_id = (
-            dataset_manager._validate_participant_id(
-                participant_id
-            )
-        )
+    print("\n=== TRAINING COMPLETED ===")
+    print("Model training: PASSED")
+    print("Independent evaluation: NOT YET PERFORMED")
 
-    except ValidationError as exc:
-        raise _to_http_error(exc) from exc
-
-    # 3. Validate label.
-    label = _validate_label(label)
-
-    # 4. Save the actual video.
-    try:
-        (
-            stored_filename,
-            file_size,
-            content_type,
-        ) = await save_video_upload(file)
-
-    except UploadTooLargeError as exc:
-        raise HTTPException(
-            status_code=413,
-            detail=str(exc),
-        ) from exc
-
-    except EmptyUploadError as exc:
-        raise HTTPException(
-            status_code=422,
-            detail=str(exc),
-        ) from exc
-
-    except UnsupportedVideoTypeError as exc:
-        raise HTTPException(
-            status_code=415,
-            detail=str(exc),
-        ) from exc
-
-    except RecorderError as exc:
-        raise HTTPException(
-            status_code=400,
-            detail=str(exc),
-        ) from exc
-
-    except OSError as exc:
-        raise HTTPException(
-            status_code=500,
-            detail="Could not store the uploaded video.",
-        ) from exc
-
-    # 5. Generate application metadata.
-    from uuid import uuid4
-
-    recording_id = uuid4().hex
-
-    created_at = datetime.now(
-        timezone.utc
-    ).isoformat()
-
-    # 6. Save metadata in SQLite.
-    try:
-        record = dataset_manager.add_recording(
-            recording_id=recording_id,
-            participant_id=participant_id,
-            consent_given=True,
-            stored_filename=stored_filename,
-            content_type=content_type,
-            file_size=file_size,
-            original_filename=(
-                file.filename or stored_filename
-            ),
-            created_at=created_at,
-            label=label,
-        )
-
-    except DatasetError as exc:
-        # The database rejected the metadata.
-        # Remove only this failed upload, not existing recordings.
-        video_path = RAW_DIR / stored_filename
-        video_path.unlink(missing_ok=True)
-
-        raise _to_http_error(exc) from exc
-
-    except Exception as exc:
-        video_path = RAW_DIR / stored_filename
-        video_path.unlink(missing_ok=True)
-
-        raise HTTPException(
-            status_code=500,
-            detail="Could not save recording metadata.",
-        ) from exc
-
-    return _serialize_record(record)
+    return metadata
 
 
-# ---------------------------------------------------------------------
-# Update recording label
-# ---------------------------------------------------------------------
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Train the Translate App experimental model."
+    )
 
-@app.patch("/api/recordings/{recording_id}")
-def update_recording_label(
-    recording_id: str,
-    body: LabelUpdate,
-) -> dict:
-    """Update a recording's label."""
+    parser.add_argument(
+        "--estimators",
+        type=int,
+        default=DEFAULT_ESTIMATORS,
+    )
 
-    label = _validate_label(body.label)
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=RANDOM_STATE,
+    )
+
+    args = parser.parse_args()
 
     try:
-        record = dataset_manager.update_label(
-            recording_id,
-            label,
+        train_model(
+            estimators=args.estimators,
+            seed=args.seed,
         )
 
-    except DatasetError as exc:
-        raise _to_http_error(exc) from exc
+    except (
+        DatasetError,
+        PreprocessingError,
+        TrainingError,
+    ) as error:
+        print(f"\nTraining failed:\n{error}")
+        sys.exit(1)
 
-    return _serialize_record(record)
 
-
-# ---------------------------------------------------------------------
-# Delete recording metadata
-# ---------------------------------------------------------------------
-
-@app.delete("/api/recordings/{recording_id}")
-def delete_recording(recording_id: str) -> dict:
-    """
-    Delete recording metadata.
-
-    The original video remains in dataset/raw/.
-    """
-
-    try:
-        dataset_manager.delete_recording_by_id(
-            recording_id
-        )
-
-    except DatasetError as exc:
-        raise _to_http_error(exc) from exc
-
-    return {
-        "deleted": recording_id,
-        "video_preserved": True,
-    }
+if __name__ == "__main__":
+    main()
