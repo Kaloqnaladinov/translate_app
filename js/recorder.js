@@ -13,8 +13,11 @@
        1. CONFIGURATION
        ===================================================== */
 
-const API_BASE_URL =
-    window.TRANSLATE_API_BASE_URL || 'http://127.0.0.1:8000';    /* =====================================================
+    const API_BASE_URL =
+        window.TRANSLATE_API_BASE_URL ||
+        'http://127.0.0.1:8000';
+
+    /* =====================================================
        2. HTML ELEMENTS
        ===================================================== */
 
@@ -28,11 +31,14 @@ const API_BASE_URL =
     const playButton = document.querySelector('.play-btn');
     const stopButton = document.querySelector('.stop-btn');
 
-    const switchCameraButton = document.querySelector('#switch-camera');
+    const switchCameraButton =
+        document.querySelector('#switch-camera');
 
-    const controlsPanel = document.querySelector('#camera-controls');
+    const controlsPanel =
+        document.querySelector('#camera-controls');
 
-    const statusElement = document.querySelector('.text-bold');
+    const statusElement =
+        document.querySelector('.text-bold');
 
     /* =====================================================
        3. APPLICATION STATE
@@ -62,7 +68,7 @@ const API_BASE_URL =
 
     function createParticipantId() {
         if (window.crypto?.randomUUID) {
-            return `web-${crypto.randomUUID()}`;
+            return `web-${window.crypto.randomUUID()}`;
         }
 
         return (
@@ -91,28 +97,20 @@ const API_BASE_URL =
             left: '50%',
             top: '50%',
             transform: 'translate(-50%, -50%)',
-
             width: 'max-content',
             maxWidth: 'calc(100% - 40px)',
-
             padding: '11px 15px',
-
             backgroundColor: '#111',
             color: '#fff',
-
             border: '1px solid #555',
             borderRadius: '12px',
-
             fontSize: '13px',
             fontWeight: '700',
             lineHeight: '1.4',
             textAlign: 'center',
-
             boxShadow: '0 4px 15px rgba(0,0,0,0.35)',
-
             zIndex: '50',
             pointerEvents: 'none',
-
             opacity: '0',
             transition: 'opacity 0.2s ease'
         });
@@ -121,7 +119,8 @@ const API_BASE_URL =
     }
 
     function setStatus(message, duration = 2800, isError = false) {
-        // Не показваме обичайните статуси на тестерите.
+        // Запазваме досегашното поведение:
+        // обичайните статуси не се показват на тестерите.
         if (!isError) return;
 
         createToast();
@@ -361,7 +360,16 @@ const API_BASE_URL =
                 });
             }
 
-            setStatus('Не можа да се запише.', 4500, true);
+            console.error(
+                '[Recorder] Camera switch failed:',
+                error
+            );
+
+            setStatus(
+                'Не можа да се запише.',
+                4500,
+                true
+            );
 
         } finally {
             isSwitchingCamera = false;
@@ -451,7 +459,16 @@ const API_BASE_URL =
                 event => {
                     shouldUpload = false;
 
-                    setStatus('Не можа да се запише.', 4500, true);
+                    console.error(
+                        '[Recorder] MediaRecorder error:',
+                        event
+                    );
+
+                    setStatus(
+                        'Не можа да се запише.',
+                        4500,
+                        true
+                    );
 
                     setButtonStates(false);
                 }
@@ -460,11 +477,13 @@ const API_BASE_URL =
             mediaRecorder.addEventListener(
                 'stop',
                 async () => {
-                    if (shouldUpload && !pageIsClosing) {
-                        await uploadRecording();
+                    try {
+                        if (shouldUpload && !pageIsClosing) {
+                            await uploadRecording();
+                        }
+                    } finally {
+                        setButtonStates(false);
                     }
-
-                    setButtonStates(false);
                 }
             );
 
@@ -472,10 +491,22 @@ const API_BASE_URL =
 
             setButtonStates(true);
 
-            setStatus('Камерата е активна. Записът започна.');
+            setStatus(
+                'Камерата е активна. Записът започна.'
+            );
 
         } catch (error) {
-            setStatus('Не можа да се запише.', 4500, true);
+            console.error(
+                '[Recorder] Could not start recording:',
+                error
+            );
+
+            setStatus(
+                'Не можа да се запише.',
+                4500,
+                true
+            );
+
             setButtonStates(false);
         }
     }
@@ -552,8 +583,11 @@ const API_BASE_URL =
                 'Камерен запис'
             );
 
-            setStatus('Изпращане на видеото към backend...');
+            setStatus(
+                'Изпращане на видеото към backend...'
+            );
 
+            // 1. Upload video.
             const response = await fetch(
                 `${API_BASE_URL}/api/recordings`,
                 {
@@ -573,83 +607,126 @@ const API_BASE_URL =
                 );
             }
 
-           
-recordedChunks = [];
-
-setStatus(
-    `Записът е запазен успешно! ID: ${result.id}`
-);
-
-// AI gesture prediction
-try {
-    console.info('[Translate AI] Стартиране на разпознаването...');
-
-    const predictionResponse = await fetch(
-        `${API_BASE_URL}/api/recordings/${encodeURIComponent(result.id)}/predict`,
-        {
-            method: 'POST',
-            headers: {
-                'Accept': 'application/json'
+            if (!result.id) {
+                throw new Error(
+                    'Backend не върна ID на записа.'
+                );
             }
+
+            recordedChunks = [];
+
+            console.info(
+                '[Recorder] Video uploaded successfully.',
+                {
+                    recordingId: result.id,
+                    fileSize: videoBlob.size,
+                    mimeType
+                }
+            );
+
+            setStatus(
+                `Записът е запазен успешно! ID: ${result.id}`
+            );
+
+            // 2. Run AI gesture prediction.
+            // Upload stays successful even if prediction fails.
+            await runPrediction(result.id);
+
+        } catch (error) {
+            console.error(
+                '[Recorder] Грешка при запис или изпращане:',
+                error
+            );
+
+            setStatus(
+                'Не можа да се запише.',
+                4500,
+                true
+            );
         }
-    );
-
-    const predictionResult = await predictionResponse
-        .json()
-        .catch(() => ({}));
-
-    if (!predictionResponse.ok) {
-        throw new Error(
-            predictionResult.detail ||
-            `Prediction failed: HTTP ${predictionResponse.status}`
-        );
     }
-
-    if (
-        predictionResult.status !== 'success' ||
-        !predictionResult.prediction
-    ) {
-        throw new Error('Invalid prediction response.');
-    }
-
-    const prediction = predictionResult.prediction;
-
-    console.info(
-        '[Translate AI] РАЗПОЗНАТ ЖЕСТ:',
-        prediction.predicted_label
-    );
-
-    console.info(
-        '[Translate AI] ВЕРОЯТНОСТ:',
-        `${(prediction.confidence * 100).toFixed(2)}%`
-    );
-
-    console.table(prediction.top_predictions);
-
-    console.info(
-        '[Translate AI] Пълен резултат:',
-        prediction
-    );
-
-} catch (predictionError) {
-    // Качването остава успешно, дори ако AI разпознаването се провали.
-    console.error(
-        '[Translate AI] Грешка при разпознаването:',
-        predictionError
-    );
-}
-
-
-} catch (error) {
-    // Подробностите остават в конзолата за диагностика.
-    // Потребителят вижда само кратко и спокойно съобщение.
-    console.error('[Recorder] Грешка при запис или изпращане:', error);
-
-    setStatus('Не можа да се запише.', 4500, true);
-}    }
 
     /* =====================================================
-       15. FLOATING PANEL — DRAG AND SNAP
+       15. AI GESTURE PREDICTION
+       ===================================================== */
+
+    async function runPrediction(recordingId) {
+        try {
+            console.info(
+                '[Translate AI] Стартиране на разпознаването...',
+                recordingId
+            );
+
+            const predictionResponse = await fetch(
+                `${API_BASE_URL}/api/recordings/${encodeURIComponent(recordingId)}/predict`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                }
+            );
+
+            const predictionResult = await predictionResponse
+                .json()
+                .catch(() => ({}));
+
+            if (!predictionResponse.ok) {
+                throw new Error(
+                    predictionResult.detail ||
+                    `Prediction failed: HTTP ${predictionResponse.status}`
+                );
+            }
+
+            if (
+                predictionResult.status !== 'success' ||
+                !predictionResult.prediction
+            ) {
+                throw new Error(
+                    'Невалиден отговор от AI системата.'
+                );
+            }
+
+            const prediction =
+                predictionResult.prediction;
+
+            console.info(
+                '[Translate AI] РАЗПОЗНАТ ЖЕСТ:',
+                prediction.predicted_label
+            );
+
+            console.info(
+                '[Translate AI] ВЕРОЯТНОСТ:',
+                `${(
+                    prediction.confidence * 100
+                ).toFixed(2)}%`
+            );
+
+            console.table(
+                prediction.top_predictions
+            );
+
+            console.info(
+                '[Translate AI] ПЪЛЕН РЕЗУЛТАТ:',
+                prediction
+            );
+
+            return prediction;
+
+        } catch (error) {
+            // Видеото вече е качено.
+            // Грешка в AI не изтрива и не отменя записа.
+            console.error(
+                '[Translate AI] Грешка при разпознаването:',
+                error
+            );
+
+            return null;
+        }
+    }
+
+    /* =====================================================
+       16. FLOATING PANEL — DRAG AND SNAP
        ===================================================== */
 
     let dragState = null;
@@ -750,12 +827,14 @@ try {
     function startPanelDrag(event) {
         if (!controlsPanel || !phoneScreen) return;
 
-        if (event.button !== undefined && event.button !== 0) {
+        if (
+            event.button !== undefined &&
+            event.button !== 0
+        ) {
             return;
         }
 
         if (event.target.closest('button')) {
-            // Бутоните запазват нормалното си действие.
             return;
         }
 
@@ -767,7 +846,6 @@ try {
 
         dragState = {
             pointerId: event.pointerId,
-
             startX: event.clientX,
             startY: event.clientY,
 
@@ -784,7 +862,9 @@ try {
             moved: false
         };
 
-        controlsPanel.setPointerCapture(event.pointerId);
+        controlsPanel.setPointerCapture(
+            event.pointerId
+        );
 
         event.preventDefault();
     }
@@ -797,8 +877,11 @@ try {
             return;
         }
 
-        const deltaX = event.clientX - dragState.startX;
-        const deltaY = event.clientY - dragState.startY;
+        const deltaX =
+            event.clientX - dragState.startX;
+
+        const deltaY =
+            event.clientY - dragState.startY;
 
         if (
             Math.abs(deltaX) > 5 ||
@@ -828,7 +911,6 @@ try {
         if (wasMoved) {
             suppressNextClick = true;
 
-            // Не допускаваме влаченето да задейства бутон.
             setTimeout(() => {
                 suppressNextClick = false;
             }, 250);
@@ -891,7 +973,7 @@ try {
     }
 
     /* =====================================================
-       16. EVENT LISTENERS
+       17. EVENT LISTENERS
        ===================================================== */
 
     if (playButton) {
@@ -929,7 +1011,7 @@ try {
     }
 
     /* =====================================================
-       17. PAGE CLEANUP
+       18. PAGE CLEANUP
        ===================================================== */
 
     window.addEventListener('pagehide', () => {
@@ -944,7 +1026,7 @@ try {
     });
 
     /* =====================================================
-       18. INITIALIZATION
+       19. INITIALIZATION
        ===================================================== */
 
     setButtonStates(false);
