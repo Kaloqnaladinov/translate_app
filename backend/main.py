@@ -1,3 +1,4 @@
+
 """
 FastAPI backend for Translate App.
 
@@ -5,17 +6,17 @@ Responsibilities:
 - receive video uploads;
 - delegate video storage to recorder.py;
 - delegate metadata operations to dataset_manager.py;
-- expose recording management endpoints;
+- extract MediaPipe landmarks;
+- predict gestures using the trained ML model;
 - preserve original recordings when metadata is deleted.
 """
 
 from __future__ import annotations
 
-from .extraction import ExtractionError, extract_video_landmarks
-
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Optional
+from uuid import uuid4
 
 from fastapi import (
     FastAPI,
@@ -37,12 +38,19 @@ from .dataset_manager import (
     NotFoundError,
     ValidationError,
     RAW_DIR,
-    PROCESSED_DIR,
+    DATASET_DIR,
 )
+
+from .extraction import (
+    ExtractionError,
+    extract_video_landmarks,
+)
+
 from ml.predict import (
     PredictionError,
     predict_recording,
 )
+
 from .recorder import (
     EmptyUploadError,
     RecorderError,
@@ -66,6 +74,9 @@ API_VERSION = "0.1.0"
 # Restrict this list before production deployment.
 ALLOWED_ORIGINS = ["*"]
 
+# Temporary prediction files are kept outside the training dataset.
+PREDICTIONS_TMP_DIR = DATASET_DIR / "predictions_tmp"
+
 
 # ---------------------------------------------------------------------
 # Application lifecycle
@@ -78,6 +89,11 @@ async def lifespan(app: FastAPI):
     dataset_manager.init_db()
 
     RAW_DIR.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    PREDICTIONS_TMP_DIR.mkdir(
         parents=True,
         exist_ok=True,
     )
@@ -300,11 +316,69 @@ def get_recording_file(recording_id: str):
         filename=record["original_filename"],
     )
 
+
 # ---------------------------------------------------------------------
 # Extract landmarks from a recording
 # ---------------------------------------------------------------------
 
 @app.post("/api/recordings/{recording_id}/extract")
+def extract_recording_landmarks(recording_id: str) -> dict:
+    """Extract MediaPipe landmarks from an existing recording."""
+
+    try:
+        record = dataset_manager.get_recording_by_id(
+            recording_id
+        )
+
+        video_path = dataset_manager.get_video_path(
+            record
+        )
+
+    except DatasetError as exc:
+        raise _to_http_error(exc) from exc
+
+    label = record.get("label")
+
+    if (
+        not label
+        or label.strip().lower() == "камерен запис"
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Set a valid sign label before "
+                "extracting landmarks."
+            ),
+        )
+
+    try:
+        result = extract_video_landmarks(
+            video_path=video_path,
+            recording_id=record["id"],
+            label=label,
+            participant_id=record["participant_id"],
+        )
+
+    except ExtractionError as exc:
+        message = str(exc)
+
+        if "already exists" in message:
+            raise HTTPException(
+                status_code=409,
+                detail=message,
+            ) from exc
+
+        raise HTTPException(
+            status_code=422,
+            detail=message,
+        ) from exc
+
+    return {
+        "status": "completed",
+        "message": "Landmarks extracted successfully.",
+        "result": result,
+    }
+
 
 # ---------------------------------------------------------------------
 # Predict gesture from an uploaded recording
@@ -315,7 +389,8 @@ def predict_recording_endpoint(recording_id: str) -> dict:
     """
     Extract temporary landmarks and predict one recorded gesture.
 
-    Temporary landmarks are deleted after prediction.
+    Temporary landmarks are stored outside dataset/processed.
+    They are deleted after prediction.
     The training dataset is not modified.
     """
 
@@ -323,16 +398,17 @@ def predict_recording_endpoint(recording_id: str) -> dict:
         record = dataset_manager.get_recording_by_id(
             recording_id
         )
-        video_path = dataset_manager.get_video_path(record)
+
+        video_path = dataset_manager.get_video_path(
+            record
+        )
 
     except DatasetError as exc:
         raise _to_http_error(exc) from exc
 
-    from uuid import uuid4
-
     temporary_landmarks = (
-        PROCESSED_DIR /
-        f"prediction__{uuid4().hex}.landmarks.jsonl"
+        PREDICTIONS_TMP_DIR
+        / f"prediction__{uuid4().hex}.landmarks.jsonl"
     )
 
     try:
@@ -364,64 +440,24 @@ def predict_recording_endpoint(recording_id: str) -> dict:
     except ExtractionError as exc:
         raise HTTPException(
             status_code=422,
-            detail="Could not extract landmarks from the video.",
+            detail=(
+                "Could not extract landmarks from the video."
+            ),
         ) from exc
 
     except PredictionError as exc:
         raise HTTPException(
             status_code=503,
-            detail="AI prediction is currently unavailable.",
+            detail=(
+                "AI prediction is currently unavailable."
+            ),
         ) from exc
 
     finally:
         # Never leave temporary prediction data in the dataset.
         temporary_landmarks.unlink(missing_ok=True)
 
-def extract_recording_landmarks(recording_id: str) -> dict:
-    """Extract MediaPipe landmarks from an existing recording."""
 
-    try:
-        record = dataset_manager.get_recording_by_id(recording_id)
-        video_path = dataset_manager.get_video_path(record)
-
-    except DatasetError as exc:
-        raise _to_http_error(exc) from exc
-
-    label = record.get("label")
-
-    if not label or label.strip().lower() == "камерен запис":
-        raise HTTPException(
-            status_code=422,
-            detail="Set a valid sign label before extracting landmarks.",
-        )
-
-    try:
-        result = extract_video_landmarks(
-            video_path=video_path,
-            recording_id=record["id"],
-            label=label,
-            participant_id=record["participant_id"],
-        )
-
-    except ExtractionError as exc:
-        message = str(exc)
-
-        if "already exists" in message:
-            raise HTTPException(
-                status_code=409,
-                detail=message,
-            ) from exc
-
-        raise HTTPException(
-            status_code=422,
-            detail=message,
-        ) from exc
-
-    return {
-        "status": "completed",
-        "message": "Landmarks extracted successfully.",
-        "result": result,
-    }
 # ---------------------------------------------------------------------
 # Create recording
 # ---------------------------------------------------------------------
@@ -506,8 +542,6 @@ async def create_recording(
         ) from exc
 
     # 5. Generate application metadata.
-    from uuid import uuid4
-
     recording_id = uuid4().hex
 
     created_at = datetime.now(
@@ -532,7 +566,7 @@ async def create_recording(
 
     except DatasetError as exc:
         # The database rejected the metadata.
-        # Remove only this failed upload, not existing recordings.
+        # Remove only this failed upload.
         video_path = RAW_DIR / stored_filename
         video_path.unlink(missing_ok=True)
 
