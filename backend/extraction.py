@@ -1,5 +1,5 @@
 
-"""Extract body and hand landmarks from original source videos."""
+"""Extract body and hand landmarks from source and uploaded videos."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from typing import Any
 from backend.dataset_manager import DATASET_DIR, RAW_DIR
 
 PROCESSED_DIR = DATASET_DIR / "processed"
+PREDICTIONS_DIR = DATASET_DIR / "predictions_tmp"
 SOURCE_DIR = RAW_DIR / "source"
 
 SOURCE_FOLDERS = {
@@ -20,8 +21,6 @@ SOURCE_FOLDERS = {
 }
 
 SUPPORTED_EXTENSIONS = {".webm", ".mp4", ".mov"}
-
-# Keep compatibility with ml/dataset.py.
 EXTRACTION_VERSION = "1.1"
 
 PARTICIPANTS = {
@@ -45,24 +44,18 @@ def discover_source_videos() -> list[Path]:
             continue
 
         for path in folder.rglob("*"):
-            if (
-                path.is_file()
-                and path.suffix.lower() in SUPPORTED_EXTENSIONS
-            ):
+            if path.is_file() and path.suffix.lower() in SUPPORTED_EXTENSIONS:
                 videos.append(path)
 
     return sorted(videos, key=lambda path: str(path).lower())
 
 
 def _validate_video_path(video_path: str | Path) -> Path:
-    """Accept videos inside dataset/raw, except the forbidden nonedited folder."""
+    """Accept videos inside dataset/raw, except forbidden nonedited data."""
 
     source = Path(video_path).resolve()
     raw_root = RAW_DIR.resolve()
-
-    forbidden_dir = (
-        raw_root / "source" / "nonedited"
-    ).resolve()
+    forbidden_dir = (raw_root / "source" / "nonedited").resolve()
 
     if not source.is_file():
         raise ExtractionError("Video file does not exist.")
@@ -70,7 +63,6 @@ def _validate_video_path(video_path: str | Path) -> Path:
     if source.suffix.lower() not in SUPPORTED_EXTENSIONS:
         raise ExtractionError("Unsupported video format.")
 
-    # Забраняваме nonedited и всички нейни подпапки.
     try:
         source.relative_to(forbidden_dir)
     except ValueError:
@@ -80,7 +72,6 @@ def _validate_video_path(video_path: str | Path) -> Path:
             "Videos from dataset/raw/source/nonedited cannot be processed."
         )
 
-    # Видеото трябва да се намира вътре в dataset/raw.
     try:
         source.relative_to(raw_root)
     except ValueError as error:
@@ -90,8 +81,9 @@ def _validate_video_path(video_path: str | Path) -> Path:
 
     return source
 
+
 def _normalize_label(label: str) -> str:
-    """Normalize filename-derived labels without merging meanings."""
+    """Normalize labels without merging meanings."""
 
     label = label.strip()
     label = re.sub(r"[_\s]+", " ", label)
@@ -101,7 +93,7 @@ def _normalize_label(label: str) -> str:
 
 
 def _get_video_metadata(source: Path) -> dict[str, str | None]:
-    """Infer category, participant and gesture label."""
+    """Infer category, participant and label from source filenames."""
 
     try:
         relative = source.relative_to(SOURCE_DIR.resolve())
@@ -115,9 +107,7 @@ def _get_video_metadata(source: Path) -> dict[str, str | None]:
     category = relative.parts[0] if relative.parts else None
 
     if category not in SOURCE_FOLDERS:
-        raise ExtractionError(
-            f"Unknown source category: {category}"
-        )
+        raise ExtractionError(f"Unknown source category: {category}")
 
     stem = source.stem
     participant_id = None
@@ -132,7 +122,6 @@ def _get_video_metadata(source: Path) -> dict[str, str | None]:
             break
 
     if label:
-        # Remove repetition suffixes: _1, _2, _1-1, etc.
         label = re.sub(r"(?:_|-)\d+(?:-\d+)?$", "", label)
         label = _normalize_label(label)
 
@@ -154,9 +143,10 @@ def _get_video_metadata(source: Path) -> dict[str, str | None]:
 
 
 def _recording_id(source: Path) -> str:
-    """Generate a stable 32-character ID from the relative source path."""
+    """Generate a stable ID from the relative source path."""
 
     relative = source.relative_to(RAW_DIR.resolve()).as_posix().casefold()
+
     return hashlib.md5(
         relative.encode("utf-8")
     ).hexdigest()
@@ -199,6 +189,39 @@ def _landmarks_to_list(
     return points
 
 
+def _validate_output_path(
+    output_path: str | Path | None,
+    source: Path,
+) -> Path:
+    """Allow normal dataset output or isolated temporary predictions."""
+
+    if output_path is None:
+        PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
+        return PROCESSED_DIR / _output_filename(source)
+
+    destination = Path(output_path).resolve()
+
+    allowed_directories = {
+        PROCESSED_DIR.resolve(),
+        PREDICTIONS_DIR.resolve(),
+    }
+
+    if destination.parent not in allowed_directories:
+        raise ExtractionError(
+            "Output must be directly inside dataset/processed "
+            "or dataset/predictions_tmp."
+        )
+
+    if not destination.name.endswith(".landmarks.jsonl"):
+        raise ExtractionError(
+            "Output filename must end with .landmarks.jsonl."
+        )
+
+    destination.parent.mkdir(parents=True, exist_ok=True)
+
+    return destination
+
+
 def extract_video_landmarks(
     video_path: str | Path,
     frame_step: int = 1,
@@ -209,6 +232,7 @@ def extract_video_landmarks(
     label: str | None = None,
     participant_id: str | None = None,
     overwrite: bool = False,
+    output_path: str | Path | None = None,
 ) -> dict[str, Any]:
     """Extract pose and both-hand landmarks from one video."""
 
@@ -217,14 +241,10 @@ def extract_video_landmarks(
         or not isinstance(frame_step, int)
         or frame_step < 1
     ):
-        raise ExtractionError(
-            "frame_step must be a positive integer."
-        )
+        raise ExtractionError("frame_step must be a positive integer.")
 
     if model_complexity not in (0, 1, 2):
-        raise ExtractionError(
-            "model_complexity must be 0, 1 or 2."
-        )
+        raise ExtractionError("model_complexity must be 0, 1 or 2.")
 
     for name, value in (
         ("min_detection_confidence", min_detection_confidence),
@@ -251,6 +271,13 @@ def extract_video_landmarks(
             "Missing recording ID, label or participant ID."
         )
 
+    destination = _validate_output_path(output_path, source)
+
+    if destination.exists() and not overwrite:
+        raise ExtractionError(
+            f"Extraction already exists: {destination.name}"
+        )
+
     try:
         import cv2
         import mediapipe as mp
@@ -262,27 +289,6 @@ def extract_video_landmarks(
     if not hasattr(mp, "solutions"):
         raise ExtractionError(
             "This MediaPipe installation does not expose mp.solutions."
-        )
-
-    PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
-
-    if output_path is None:
-      output_path = PROCESSED_DIR / _output_filename(source)
-    else:
-     output_path = Path(output_path).resolve()
-
-    if output_path.parent != PROCESSED_DIR.resolve():
-        raise ExtractionError(
-            "Custom output must be directly inside dataset/processed."
-        )
-
-    if not output_path.name.endswith(".landmarks.jsonl"):
-        raise ExtractionError(
-            "Output filename must end with .landmarks.jsonl."
-        )
-    if output_path.exists() and not overwrite:
-        raise ExtractionError(
-            f"Extraction already exists: {output_path.name}"
         )
 
     capture = cv2.VideoCapture(str(source))
@@ -315,15 +321,11 @@ def extract_video_landmarks(
             smooth_landmarks=True,
             enable_segmentation=False,
             refine_face_landmarks=False,
-            min_detection_confidence=float(
-                min_detection_confidence
-            ),
-            min_tracking_confidence=float(
-                min_tracking_confidence
-            ),
+            min_detection_confidence=float(min_detection_confidence),
+            min_tracking_confidence=float(min_tracking_confidence),
         ) as holistic:
 
-            with output_path.open(
+            with destination.open(
                 "w" if overwrite else "x",
                 encoding="utf-8",
             ) as output:
@@ -423,7 +425,7 @@ def extract_video_landmarks(
             "participant_id": participant_id,
             "category": inferred["category"],
             "source": source.name,
-            "output_filename": output_path.name,
+            "output_filename": destination.name,
             "total_frames_read": frame_index,
             "processed_frames": processed_frames,
             "fps": fps,
@@ -444,14 +446,13 @@ def extract_video_landmarks(
         capture.release()
 
         if not success_completed:
-            output_path.unlink(missing_ok=True)
+            destination.unlink(missing_ok=True)
 
 
 def extract_source_dataset(
     frame_step: int = 1,
     model_complexity: int = 1,
     overwrite: bool = False,
-    output_path: str | Path | None = None,
 ) -> dict[str, Any]:
     """Extract all videos in source/letters and source/words."""
 
@@ -462,8 +463,7 @@ def extract_source_dataset(
     skipped = []
 
     for video in videos:
-        output_name = _output_filename(video)
-        output_path = PROCESSED_DIR / output_name
+        output_path = PROCESSED_DIR / _output_filename(video)
 
         if output_path.exists() and not overwrite:
             skipped.append(video.name)
